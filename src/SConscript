@@ -1,0 +1,14 @@
+import os
+
+env = Environment()
+env["ENV"]["PKG_CONFIG_PATH"] = os.getenv(
+    "PKG_CONFIG_PATH", "/usr/local/lib/pkgconfig")
+
+env.MergeFlags(f"!pkg-config gtk+-3.0 --cflags --libs")
+env.MergeFlags(f"!pkg-config asynctls --static --cflags --libs")
+
+env.Program(
+    "lip",
+    ["lip.c", "ind.c", "rpl.c", "util.c"],
+    CCFLAGS="-g -Wall -Werror",
+)

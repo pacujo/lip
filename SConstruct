@@ -1,27 +1,2 @@
-env = Environment()
-env["ENV"]["PKG_CONFIG_PATH"] = "/usr/local/lib/pkgconfig"
-
-packages = [
-    "gtk+-3.0",
-    "asynctls",
-    "openssl",
-    "async",
-    "fstrace",
-    "rotatable",
-    "unixkit",
-    "encjson",
-    "fsdyn"
-]
-
-env.MergeFlags([
-    f"!pkg-config {pkg} --cflags --libs"
-    for pkg in packages
-])
-
-env.MergeFlags("-lm")
-
-env.Program(
-    "irc",
-    ["irc.c"],
-    CCFLAGS="-g -Wall -Werror",
-)
+for dir in [ "src", "components/lip" ]:
+    SConscript(f"{dir}/SConscript", variant_dir=f"stage/native/build/{dir}")
