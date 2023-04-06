@@ -20,6 +20,7 @@ typedef enum {
 } state_t;
 
 typedef struct {
+    char *trace_include, *trace_exclude;
     async_t *async;
     state_t state;
     tcp_client_t *client;

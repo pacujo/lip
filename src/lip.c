@@ -381,15 +381,11 @@ static gboolean poll_async(gint fd, GIOCondition condition, gpointer user_data)
     return do_poll(user_data) ? G_SOURCE_CONTINUE : G_SOURCE_REMOVE;
 }
 
-static void init_tracing()
+static void init_tracing(app_t *app)
 {
     fstrace_t *trace = fstrace_direct(stderr);
     fstrace_declare_globals(trace);
-#if 1
-    fstrace_select_regex(trace, "X^IRC-", NULL);
-#else
-    fstrace_select_regex(trace, ".", NULL);
-#endif
+    fstrace_select_regex(trace, app->trace_include, app->trace_exclude);
 }
 
 static void connect_to_irc_server(app_t *app)
@@ -986,7 +982,9 @@ FSTRACE_DECL(IRC_ACTIVATE, "");
 
 static void activate(GtkApplication *, app_t *app)
 {
+    init_tracing(app);
     FSTRACE(IRC_ACTIVATE);
+    app->async = make_async();
     attach_async_to_gtk(app);
     build_menus(app);
     GdkRectangle geometry;
@@ -1005,50 +1003,44 @@ static void shut_down(GtkApplication *, app_t *app)
 }
 
 
-#if 0
 FSTRACE_DECL(IRC_COMMAND_OPTIONS, "");
 
 static gint command_options(GtkApplication *, GVariantDict *options, app_t *app)
 {
     FSTRACE(IRC_COMMAND_OPTIONS);
-    printf("zing\n");
     const char *arg;
-    if (g_variant_dict_lookup (options, "hoo", "s", &arg))
-        printf("zang %s\n", arg);
+    if (g_variant_dict_lookup(options, "trace-include", "s", &arg)) {
+        fsfree(app->trace_include);
+        app->trace_include = charstr_dupstr(arg);
+    }
+    if (g_variant_dict_lookup(options, "trace-exclude", "s", &arg)) {
+        fsfree(app->trace_exclude);
+        app->trace_exclude = charstr_dupstr(arg);
+    }
     return -1;                  /* carry on */
 }
-#endif
 
 static void add_command_options(app_t *app)
 {
-#if 0
     g_application_add_main_option(G_APPLICATION(app->gui.gapp),
-                                  "hoo", 'h',
+                                  "trace-include", 0,
                                   G_OPTION_FLAG_IN_MAIN, G_OPTION_ARG_STRING,
-                                  "Hoo", "Hoo arg");
+                                  "Specify trace events", "REGEXP");
+    g_application_add_main_option(G_APPLICATION(app->gui.gapp),
+                                  "trace-exclude", 0,
+                                  G_OPTION_FLAG_IN_MAIN, G_OPTION_ARG_STRING,
+                                  "Exclude trace events", "REGEXP");
     g_signal_connect(app->gui.gapp, "handle-local-options",
                      G_CALLBACK(command_options), app);
-#endif
 }
-
-#if 0
-static void test(app_t *app)
-{
-    printf("%lf\n", async_now(app->async) * 1e-9);
-    async_timer_start(app->async, async_now(app->async) + ASYNC_S,
-                      (action_1) { app, (act_1) test });
-}
-#endif
 
 int main(int argc, char **argv)
 {
-    init_tracing();
     app_t app = {
         .gui = {
             .gapp = gtk_application_new(APPLICATION_ID,
                                         G_APPLICATION_FLAGS_NONE),
         },
-        .async = make_async(),
         .state = CONFIGURING,
         .channels = make_hash_table(1000, (void *) hash_string,
                                     (void *) strcmp),
@@ -1056,16 +1048,15 @@ int main(int argc, char **argv)
     g_signal_connect(app.gui.gapp, "activate", G_CALLBACK(activate), &app);
     g_signal_connect(app.gui.gapp, "shutdown", G_CALLBACK(shut_down), &app);
     add_command_options(&app);
-#if 0
-    async_timer_start(app.async, async_now(app.async) + ASYNC_S,
-                      (action_1) { &app, (act_1) test });
-#endif
     int status = g_application_run(G_APPLICATION(app.gui.gapp), argc, argv);
-    destroy_async(app.async);
+    if (app.async)
+        destroy_async(app.async);
     /* TODO: destroy channnels */
     fsfree(app.nick);
     fsfree(app.name);
     fsfree(app.server);
     g_clear_object(&app.gui.gapp);
+    fsfree(app.trace_include);
+    fsfree(app.trace_exclude);
     return status;
 }
