@@ -1,8 +1,10 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
 #include <errno.h>
 #include <assert.h>
+#include <sys/stat.h>
 
 #include <glib-unix.h>
 
@@ -19,7 +21,10 @@
 
 static const char *const APPLICATION_ID = "net.pacujo.lip";
 static const char *const IRC_DEFAULT_SERVER = "irc.oftc.net";
-static const char *const IRC_DEFAULT_PORT = "6697";
+
+enum {
+    IRC_DEFAULT_PORT = 6697,
+};
 
 static GtkWidget *ensure_main_window(app_t *app);
 
@@ -308,12 +313,12 @@ static void receive(app_t *app)
 static void log_in(app_t *app)
 {
     emit(app, "NICK ");
-    emit(app, app->nick);
+    emit(app, app->config.nick);
     emit(app, " \r\n");
     emit(app, "USER ");
-    emit(app, app->nick);
+    emit(app, app->config.nick);
     emit(app, " * * :");
-    emit(app, app->name);
+    emit(app, app->config.name);
     emit(app, "\r\n");
 }
 
@@ -346,7 +351,7 @@ static void establish(app_t *app)
     app->input_end = app->input_buffer + sizeof app->input_buffer;
     app->tls_conn = open_tls_client_2(app->async,
                                     tcp_get_input_stream(app->tcp_conn),
-                                    TLS_SYSTEM_CA_BUNDLE, app->server);
+                                    TLS_SYSTEM_CA_BUNDLE, app->config.server);
     tcp_set_output_stream(app->tcp_conn,
                           tls_get_encrypted_output_stream(app->tls_conn));
     app->outq = make_queuestream(app->async);
@@ -385,13 +390,15 @@ static void init_tracing(app_t *app)
 {
     fstrace_t *trace = fstrace_direct(stderr);
     fstrace_declare_globals(trace);
-    fstrace_select_regex(trace, app->trace_include, app->trace_exclude);
+    fstrace_select_regex(trace, app->opts.trace_include,
+                         app->opts.trace_exclude);
 }
 
 static void connect_to_irc_server(app_t *app)
 {
 #if 1
-    app->client = open_tcp_client(app->async, app->server, app->port);
+    app->client =
+        open_tcp_client(app->async, app->config.server, app->config.port);
     action_1 establish_cb = { app, (act_1) establish };
     tcp_client_register_callback(app->client, establish_cb);
     async_execute(app->async, establish_cb);
@@ -496,7 +503,7 @@ static gboolean on_key_press(GtkWidget *view, GdkEventKey *event,
     channel_t *channel = user_data;
     GtkTextBuffer *buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(view));
     gchar *text = extract_text(buffer);
-    append_message(channel, channel->app->nick, "mine", "%s", text);
+    append_message(channel, channel->app->config.nick, "mine", "%s", text);
     send_message(channel, text);
     g_free(text);
     return TRUE;
@@ -879,6 +886,42 @@ static GtkWidget *ensure_main_window(app_t *app)
     return app->gui.app_window;
 }
 
+static void make_parent_dirs(int dirfd, char *pathname)
+{
+    for (char *p = pathname; *p; p++)
+        if (*p == '/') {
+            *p = '\0';
+            mkdirat(dirfd, pathname, S_IRWXU);
+            *p = '/';
+        }
+}
+
+static void store_settings(app_t *app)
+{
+    if (!app->opts.state_file)
+        return;
+    char *state_file = charstr_dupstr(app->opts.state_file);
+    make_parent_dirs(app->home_dir_fd, state_file);
+    json_thing_t *cfg = json_make_object();
+    json_add_to_object(cfg, "server", json_make_string(app->config.server));
+    json_add_to_object(cfg, "port", json_make_integer(app->config.port));
+    json_add_to_object(cfg, "nick", json_make_string(app->config.nick));
+    json_add_to_object(cfg, "full_name", json_make_string(app->config.name));
+    int fd = openat(app->home_dir_fd, state_file, O_WRONLY | O_CREAT, 0660);
+    if (fd < 0) {
+        json_destroy_thing(cfg);
+        fprintf(stderr, PROGRAM ": cannot open %s\n", state_file);
+        fsfree(state_file);
+        return;
+    }
+    fsfree(state_file);
+    FILE *statef = fdopen(fd, "w");
+    assert(statef);
+    json_utf8_dump(cfg, statef);
+    fclose(statef);
+    json_destroy_thing(cfg);
+}
+
 static void configuration_ok_response(app_t *app)
 {
     const gchar *nick =
@@ -901,16 +944,17 @@ static void configuration_ok_response(app_t *app)
         modal_error_dialog(app->gui.configuration_window, "Bad server host");
         return;
     }
-    if (!valid_tcp_port(port, &app->port)) {
+    if (!valid_tcp_port(port, &app->config.port)) {
         modal_error_dialog(app->gui.configuration_window,
                            "Bad TCP port number");
         return;
     }
-    app->nick = charstr_dupstr(nick);
-    app->name = charstr_dupstr(name);
-    app->server = charstr_dupstr(server);
+    app->config.nick = charstr_dupstr(nick);
+    app->config.name = charstr_dupstr(name);
+    app->config.server = charstr_dupstr(server);
     gtk_widget_destroy(app->gui.configuration_window);
     app->gui.configuration_window = NULL;
+    store_settings(app);
     set_state(app, CONNECTING);
     ensure_main_window(app);
     connect_to_irc_server(app);
@@ -951,10 +995,52 @@ static gboolean configuration_dialog_key_press(GtkWidget *, GdkEventKey *event,
     return FALSE;
 }
 
+static void get_settings(app_t *app)
+{
+    app->config.nick = charstr_dupstr("");
+    app->config.name = charstr_dupstr("");
+    app->config.server = charstr_dupstr(IRC_DEFAULT_SERVER);
+    app->config.port = IRC_DEFAULT_PORT;
+    if (app->opts.reset_state || !app->opts.state_file)
+        return;
+    int fd = openat(app->home_dir_fd, app->opts.state_file, O_RDONLY);
+    if (fd < 0)
+        return;
+    FILE *statef = fdopen(fd, "r");
+    assert(statef);
+    json_thing_t *cfg = json_utf8_decode_file(statef, 1000000);
+    if (!cfg || json_thing_type(cfg) != JSON_OBJECT) {
+        json_destroy_thing(cfg);
+        fclose(statef);
+        return;
+    }
+    const char *server;
+    if (json_object_get_string(cfg, "server", &server)) {
+        fsfree(app->config.server);
+        app->config.server = charstr_dupstr(server);
+    }
+    long long port;
+    if (json_object_get_integer(cfg, "port", &port))
+        app->config.port = port;
+    const char *nick;
+    if (json_object_get_string(cfg, "nick", &nick)) {
+        fsfree(app->config.nick);
+        app->config.nick = charstr_dupstr(nick);
+    }
+    const char *full_name;
+    if (json_object_get_string(cfg, "full_name", &full_name)) {
+        fsfree(app->config.name);
+        app->config.name = charstr_dupstr(full_name);
+    }
+    json_destroy_thing(cfg);
+    fclose(statef);
+}
+
 static void configure(app_t *app)
 {
     assert(app->state == CONFIGURING);
     assert(!app->gui.configuration_window);
+    get_settings(app);
     app->gui.configuration_window = gtk_application_window_new(app->gui.gapp);
     GtkWidget *dialog =
         gtk_dialog_new_with_buttons(APP_NAME ": Configuration",
@@ -967,12 +1053,15 @@ static void configure(app_t *app)
                              G_CALLBACK(configuration_response), app);
     GtkWidget *content_area =
         gtk_dialog_get_content_area(GTK_DIALOG(dialog));
-    app->gui.configuration_nick = entry_cell(content_area, "Your Nick", "");
-    app->gui.configuration_name = entry_cell(content_area, "Your Name", "");
+    app->gui.configuration_nick =
+        entry_cell(content_area, "Your Nick", app->config.nick);
+    app->gui.configuration_name =
+        entry_cell(content_area, "Your Name", app->config.name);
     app->gui.configuration_server =
-        entry_cell(content_area, "Server Host", IRC_DEFAULT_SERVER);
-    app->gui.configuration_port =
-        entry_cell(content_area, "TCP Port", IRC_DEFAULT_PORT);
+        entry_cell(content_area, "Server Host", app->config.server);
+    char *port = charstr_printf("%d", app->config.port);
+    app->gui.configuration_port = entry_cell(content_area, "TCP Port", port);
+    fsfree(port);
     g_signal_connect(dialog, "key_press_event",
                      G_CALLBACK(configuration_dialog_key_press), app);
     gtk_widget_show_all(dialog);
@@ -1009,19 +1098,42 @@ static gint command_options(GtkApplication *, GVariantDict *options, app_t *app)
 {
     FSTRACE(IRC_COMMAND_OPTIONS);
     const char *arg;
+    if (g_variant_dict_lookup(options, "state", "&s", &arg)) {
+        fsfree(app->opts.state_file);
+        app->opts.state_file = charstr_dupstr(arg);
+    }
+    if (g_variant_dict_lookup(options, "stateless", "b", NULL)) {
+        fsfree(app->opts.state_file);
+        app->opts.state_file = NULL;
+    }
+    app->opts.reset_state =
+        g_variant_dict_lookup(options, "reset-state", "b", NULL);
     if (g_variant_dict_lookup(options, "trace-include", "s", &arg)) {
-        fsfree(app->trace_include);
-        app->trace_include = charstr_dupstr(arg);
+        fsfree(app->opts.trace_include);
+        app->opts.trace_include = charstr_dupstr(arg);
     }
     if (g_variant_dict_lookup(options, "trace-exclude", "s", &arg)) {
-        fsfree(app->trace_exclude);
-        app->trace_exclude = charstr_dupstr(arg);
+        fsfree(app->opts.trace_exclude);
+        app->opts.trace_exclude = charstr_dupstr(arg);
     }
     return -1;                  /* carry on */
 }
 
 static void add_command_options(app_t *app)
 {
+    g_application_add_main_option(G_APPLICATION(app->gui.gapp),
+                                  "state", 's',
+                                  G_OPTION_FLAG_IN_MAIN, G_OPTION_ARG_STRING,
+                                  "State file (absolute or relative to $HOME)",
+                                  "PATH");
+    g_application_add_main_option(G_APPLICATION(app->gui.gapp),
+                                  "stateless", 0,
+                                  G_OPTION_FLAG_IN_MAIN, G_OPTION_ARG_NONE,
+                                  "No state file", NULL);
+    g_application_add_main_option(G_APPLICATION(app->gui.gapp),
+                                  "reset-state", 0,
+                                  G_OPTION_FLAG_IN_MAIN, G_OPTION_ARG_NONE,
+                                  "Reset state file", NULL);
     g_application_add_main_option(G_APPLICATION(app->gui.gapp),
                                   "trace-include", 0,
                                   G_OPTION_FLAG_IN_MAIN, G_OPTION_ARG_STRING,
@@ -1037,6 +1149,9 @@ static void add_command_options(app_t *app)
 int main(int argc, char **argv)
 {
     app_t app = {
+        .opts = {
+            .state_file = charstr_dupstr(".config/lip/state.json"),
+        },
         .gui = {
             .gapp = gtk_application_new(APPLICATION_ID,
                                         G_APPLICATION_FLAGS_NONE),
@@ -1045,6 +1160,17 @@ int main(int argc, char **argv)
         .channels = make_hash_table(1000, (void *) hash_string,
                                     (void *) strcmp),
     };
+
+    const char *home = getenv("HOME");
+    if (!home || *home != '/') {
+        fprintf(stderr, PROGRAM ": no HOME in the environment\n");
+        return EXIT_FAILURE;
+    }
+    app.home_dir_fd = open(home, O_DIRECTORY | O_RDONLY);
+    if (app.home_dir_fd < 0) {
+        fprintf(stderr, PROGRAM ": cannot access HOME directory\n");
+        return EXIT_FAILURE;
+    }
     g_signal_connect(app.gui.gapp, "activate", G_CALLBACK(activate), &app);
     g_signal_connect(app.gui.gapp, "shutdown", G_CALLBACK(shut_down), &app);
     add_command_options(&app);
@@ -1052,11 +1178,12 @@ int main(int argc, char **argv)
     if (app.async)
         destroy_async(app.async);
     /* TODO: destroy channnels */
-    fsfree(app.nick);
-    fsfree(app.name);
-    fsfree(app.server);
+    fsfree(app.config.nick);
+    fsfree(app.config.name);
+    fsfree(app.config.server);
     g_clear_object(&app.gui.gapp);
-    fsfree(app.trace_include);
-    fsfree(app.trace_exclude);
+    fsfree(app.opts.trace_include);
+    fsfree(app.opts.trace_exclude);
+    fsfree(app.opts.state_file);
     return status;
 }

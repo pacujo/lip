@@ -115,7 +115,7 @@ bool join(app_t *app, const char *prefix, list_t *params)
         clear_prefix(&parts);
         return false;
     }
-    if (!strcmp(parts.nick, app->nick)) {
+    if (!strcmp(parts.nick, app->config.nick)) {
         FSTRACE(IRC_GOT_OWN_JOIN);
         clear_prefix(&parts);
         return true;
@@ -195,7 +195,7 @@ static void post(app_t *app, const prefix_parts_t *parts, const char *receiver,
     assert(sender);
     channel_t *channel;
     if (valid_nick(receiver)) {
-        if (strcmp(receiver, app->nick))
+        if (strcmp(receiver, app->config.nick))
             return;             /* not for me */
         channel = open_channel(app, sender, LIMIT);
     } else channel = open_channel(app, receiver, LIMIT);

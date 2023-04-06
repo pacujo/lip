@@ -10,6 +10,7 @@
 #include <async/queuestream.h>
 #include <fsdyn/hashtable.h>
 
+#define PROGRAM "lip"
 #define APP_NAME "Lip"
 
 typedef enum {
@@ -20,7 +21,16 @@ typedef enum {
 } state_t;
 
 typedef struct {
-    char *trace_include, *trace_exclude;
+    struct {
+        char *trace_include, *trace_exclude;
+        char *state_file;    /* NULL, absolute or relative to $HOME */
+        bool reset_state;
+    } opts;
+    struct {
+        char *nick, *name, *server;
+        int port;
+    } config;
+    int home_dir_fd;
     async_t *async;
     state_t state;
     tcp_client_t *client;
@@ -31,8 +41,6 @@ typedef struct {
     char input_buffer[512];
     char *input_cursor, *input_end;
     hash_table_t *channels;           /* of key -> channel_t */
-    char *nick, *name, *server;
-    int port;
     struct {
         GtkApplication *gapp;
         gint default_width, default_height;

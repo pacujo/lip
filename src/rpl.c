@@ -13,9 +13,9 @@ static bool rpl_welcome_001(app_t *app, const char *prefix, list_t *params)
     }
     FSTRACE(IRC_RPL_WELCOME);
     list_elem_t *e = list_get_first(params);
-    fsfree(app->nick);
-    app->nick = charstr_dupstr(list_elem_get_value(e));
-    char *title = charstr_printf("%s@%s", APP_NAME, app->nick);
+    fsfree(app->config.nick);
+    app->config.nick = charstr_dupstr(list_elem_get_value(e));
+    char *title = charstr_printf("%s@%s", APP_NAME, app->config.nick);
     gtk_window_set_title(GTK_WINDOW(app->gui.app_window), title);
     fsfree(title);
     e = list_next(e);
