@@ -21,10 +21,8 @@
 
 static const char *const APPLICATION_ID = "net.pacujo.lip";
 static const char *const IRC_DEFAULT_SERVER = "irc.oftc.net";
-
-enum {
-    IRC_DEFAULT_PORT = 6697,
-};
+static const int IRC_DEFAULT_PORT = 6697;
+static const bool IRC_DEFAULT_USE_TLS = true;
 
 static GtkWidget *ensure_main_window(app_t *app);
 
@@ -349,15 +347,22 @@ static void establish(app_t *app)
     set_state(app, READY);
     app->input_cursor = app->input_buffer;
     app->input_end = app->input_buffer + sizeof app->input_buffer;
-    app->tls_conn = open_tls_client_2(app->async,
-                                    tcp_get_input_stream(app->tcp_conn),
-                                    TLS_SYSTEM_CA_BUNDLE, app->config.server);
-    tcp_set_output_stream(app->tcp_conn,
-                          tls_get_encrypted_output_stream(app->tls_conn));
     app->outq = make_queuestream(app->async);
-    tls_set_plain_output_stream(app->tls_conn,
-                                queuestream_as_bytestream_1(app->outq));
-    app->input = tls_get_plain_input_stream(app->tls_conn);
+    bytestream_1 plain_output = queuestream_as_bytestream_1(app->outq);
+    bytestream_1 tcp_input = tcp_get_input_stream(app->tcp_conn);
+    if (app->config.use_tls) {
+        app->tls_conn =
+            open_tls_client_2(app->async, tcp_input, TLS_SYSTEM_CA_BUNDLE,
+                              app->config.server);
+        tcp_set_output_stream(app->tcp_conn,
+                              tls_get_encrypted_output_stream(app->tls_conn));
+        tls_set_plain_output_stream(app->tls_conn, plain_output);
+        app->input = tls_get_plain_input_stream(app->tls_conn);
+    } else {
+        app->tls_conn = NULL;
+        tcp_set_output_stream(app->tcp_conn, plain_output);
+        app->input = tcp_input;
+    }
     action_1 receive_cb = { app, (act_1) receive };
     bytestream_1_register_callback(app->input, receive_cb);
     async_execute(app->async, receive_cb);
@@ -553,15 +558,17 @@ static void text_dimensions(const char *text, int *width, int *height)
 
 static int one_em()
 {
-    int em;
-    text_dimensions("m", &em, NULL);
+    static int em = -1;
+    if (em < 0)
+        text_dimensions("m", &em, NULL);
     return em / PANGO_SCALE;
 }
 
 static int one_ex()
 {
-    int ex;
-    text_dimensions("x", NULL, &ex);
+    static int ex = -1;
+    if (ex < 0)
+        text_dimensions("x", NULL, &ex);
     return ex / PANGO_SCALE;
 }
 
@@ -779,6 +786,7 @@ static GtkWidget *entry_cell(GtkWidget *container, const gchar *prompt,
     GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, one_em());
     add_margin(hbox);
     GtkWidget *label = gtk_label_new(prompt);
+    gtk_widget_set_halign(label, GTK_ALIGN_END);
     gtk_box_pack_start(GTK_BOX(hbox), label, TRUE, TRUE, 0);
     GtkEntryBuffer *buf = gtk_entry_buffer_new(NULL, -1);
     gtk_entry_buffer_set_text(buf, initial_text, -1);
@@ -786,6 +794,21 @@ static GtkWidget *entry_cell(GtkWidget *container, const gchar *prompt,
     gtk_box_pack_start(GTK_BOX(hbox), entry, FALSE, FALSE, 0);
     gtk_container_add(GTK_CONTAINER(container), hbox);
     return entry;
+}
+
+static GtkWidget *checkbox(GtkWidget *container, const gchar *prompt,
+                           bool initial_state)
+{
+    GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, one_em());
+    add_margin(hbox);
+    GtkWidget *label = gtk_label_new(prompt);
+    gtk_widget_set_halign(label, GTK_ALIGN_END);
+    gtk_box_pack_start(GTK_BOX(hbox), label, TRUE, TRUE, 0);
+    GtkWidget *button = gtk_switch_new();
+    gtk_switch_set_state(GTK_SWITCH(button), initial_state);
+    gtk_box_pack_start(GTK_BOX(hbox), button, TRUE, TRUE, 0);
+    gtk_container_add(GTK_CONTAINER(container), hbox);
+    return button;
 }
 
 static void join_activated(GSimpleAction *action, GVariant *parameter,
@@ -903,10 +926,11 @@ static void store_settings(app_t *app)
     char *state_file = charstr_dupstr(app->opts.state_file);
     make_parent_dirs(app->home_dir_fd, state_file);
     json_thing_t *cfg = json_make_object();
-    json_add_to_object(cfg, "server", json_make_string(app->config.server));
-    json_add_to_object(cfg, "port", json_make_integer(app->config.port));
     json_add_to_object(cfg, "nick", json_make_string(app->config.nick));
     json_add_to_object(cfg, "full_name", json_make_string(app->config.name));
+    json_add_to_object(cfg, "server", json_make_string(app->config.server));
+    json_add_to_object(cfg, "port", json_make_integer(app->config.port));
+    json_add_to_object(cfg, "use_tls", json_make_boolean(app->config.use_tls));
     int fd = openat(app->home_dir_fd, state_file, O_WRONLY | O_CREAT, 0660);
     if (fd < 0) {
         json_destroy_thing(cfg);
@@ -932,6 +956,8 @@ static void configuration_ok_response(app_t *app)
         gtk_entry_get_text(GTK_ENTRY(app->gui.configuration_server));
     const gchar *port =
         gtk_entry_get_text(GTK_ENTRY(app->gui.configuration_port));
+    const gboolean use_tls =
+        gtk_switch_get_state(GTK_SWITCH(app->gui.configuration_use_tls));
     if (!valid_nick(nick)) {
         modal_error_dialog(app->gui.configuration_window, "Bad nick");
         return;
@@ -944,7 +970,8 @@ static void configuration_ok_response(app_t *app)
         modal_error_dialog(app->gui.configuration_window, "Bad server host");
         return;
     }
-    if (!valid_tcp_port(port, &app->config.port)) {
+    int port_number;
+    if (!valid_tcp_port(port, &port_number)) {
         modal_error_dialog(app->gui.configuration_window,
                            "Bad TCP port number");
         return;
@@ -952,6 +979,8 @@ static void configuration_ok_response(app_t *app)
     app->config.nick = charstr_dupstr(nick);
     app->config.name = charstr_dupstr(name);
     app->config.server = charstr_dupstr(server);
+    app->config.port = port_number;
+    app->config.use_tls = use_tls;
     gtk_widget_destroy(app->gui.configuration_window);
     app->gui.configuration_window = NULL;
     store_settings(app);
@@ -1001,6 +1030,7 @@ static void get_settings(app_t *app)
     app->config.name = charstr_dupstr("");
     app->config.server = charstr_dupstr(IRC_DEFAULT_SERVER);
     app->config.port = IRC_DEFAULT_PORT;
+    app->config.use_tls = IRC_DEFAULT_USE_TLS;
     if (app->opts.reset_state || !app->opts.state_file)
         return;
     int fd = openat(app->home_dir_fd, app->opts.state_file, O_RDONLY);
@@ -1014,14 +1044,6 @@ static void get_settings(app_t *app)
         fclose(statef);
         return;
     }
-    const char *server;
-    if (json_object_get_string(cfg, "server", &server)) {
-        fsfree(app->config.server);
-        app->config.server = charstr_dupstr(server);
-    }
-    long long port;
-    if (json_object_get_integer(cfg, "port", &port))
-        app->config.port = port;
     const char *nick;
     if (json_object_get_string(cfg, "nick", &nick)) {
         fsfree(app->config.nick);
@@ -1032,6 +1054,17 @@ static void get_settings(app_t *app)
         fsfree(app->config.name);
         app->config.name = charstr_dupstr(full_name);
     }
+    const char *server;
+    if (json_object_get_string(cfg, "server", &server)) {
+        fsfree(app->config.server);
+        app->config.server = charstr_dupstr(server);
+    }
+    long long port;
+    if (json_object_get_integer(cfg, "port", &port))
+        app->config.port = port;
+    bool use_tls;
+    if (json_object_get_boolean(cfg, "use_tls", &use_tls))
+        app->config.use_tls = use_tls;
     json_destroy_thing(cfg);
     fclose(statef);
 }
@@ -1059,9 +1092,13 @@ static void configure(app_t *app)
         entry_cell(content_area, "Your Name", app->config.name);
     app->gui.configuration_server =
         entry_cell(content_area, "Server Host", app->config.server);
+    GtkWidget *port_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, one_em());
+    gtk_container_add(GTK_CONTAINER(content_area), port_row);
     char *port = charstr_printf("%d", app->config.port);
-    app->gui.configuration_port = entry_cell(content_area, "TCP Port", port);
+    app->gui.configuration_port = entry_cell(port_row, "TCP Port", port);
     fsfree(port);
+    app->gui.configuration_use_tls =
+        checkbox(port_row, "Use TLS", app->config.use_tls);
     g_signal_connect(dialog, "key_press_event",
                      G_CALLBACK(configuration_dialog_key_press), app);
     gtk_widget_show_all(dialog);
@@ -1178,6 +1215,7 @@ int main(int argc, char **argv)
     if (app.async)
         destroy_async(app.async);
     /* TODO: destroy channnels */
+    /* TODO: disconnect */
     fsfree(app.config.nick);
     fsfree(app.config.name);
     fsfree(app.config.server);

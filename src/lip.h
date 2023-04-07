@@ -29,6 +29,7 @@ typedef struct {
     struct {
         char *nick, *name, *server;
         int port;
+        bool use_tls;
     } config;
     int home_dir_fd;
     async_t *async;
@@ -50,6 +51,7 @@ typedef struct {
         GtkWidget *configuration_name;
         GtkWidget *configuration_server;
         GtkWidget *configuration_port;
+        GtkWidget *configuration_use_tls;
         GtkWidget *app_window;
         GtkWidget *scrolled_window;;
         GtkWidget *console;
