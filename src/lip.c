@@ -369,26 +369,13 @@ static void establish(app_t *app)
     log_in(app);
 }
 
-FSTRACE_DECL(IRC_POLL, "");
-FSTRACE_DECL(IRC_POLL_FAIL, "ERR=%e");
-
-static bool do_poll(app_t *app)
-{
-    FSTRACE(IRC_POLL);
-    if (async_poll_2(app->async) < 0) {
-        FSTRACE(IRC_POLL_FAIL);
-        return false;           /* TODO: what now? */
-    }
-    /* TODO: remove app->next_timeout, glib_timeout */
-    return true;
-}
-
 FSTRACE_DECL(IRC_POLL_ASYNC, "");
 
 static gboolean poll_async(gint fd, GIOCondition condition, gpointer user_data)
 {
     FSTRACE(IRC_POLL_ASYNC);
-    return do_poll(user_data) ? G_SOURCE_CONTINUE : G_SOURCE_REMOVE;
+    app_t *app = user_data;
+    return async_poll_2(app->async) >= 0 ? G_SOURCE_CONTINUE : G_SOURCE_REMOVE;
 }
 
 static void init_tracing(app_t *app)
@@ -419,7 +406,7 @@ static void attach_async_to_gtk(app_t *app)
     GSource *source = g_unix_fd_source_new(async_fd(app->async), G_IO_IN);
     g_source_set_callback(source, G_SOURCE_FUNC(poll_async), app, NULL);
     g_source_attach(source, NULL);
-    do_poll(app);
+    async_poll_2(app->async);
 }
 
 static double get_pixel_width(GdkRectangle *geometry)
