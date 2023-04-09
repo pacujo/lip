@@ -4,7 +4,6 @@
 #include <string.h>
 #include <errno.h>
 #include <assert.h>
-#include <sys/stat.h>
 
 #include <glib-unix.h>
 
@@ -20,11 +19,7 @@
 #include "util.h"
 
 static const char *const APPLICATION_ID = "net.pacujo.lip";
-static const char *const IRC_DEFAULT_SERVER = "irc.oftc.net";
-static const int IRC_DEFAULT_PORT = 6697;
-static const bool IRC_DEFAULT_USE_TLS = true;
 
-static void store_settings(app_t *app);
 static GtkWidget *ensure_main_window(app_t *app);
 
 static const char *trace_state(void *p)
@@ -602,30 +597,6 @@ static void add_margin(GtkWidget *widget)
     gtk_widget_set_margin_end(widget, margin);
 }
 
-static char scandinavian_lcase(char c)
-{
-    switch (c) {
-        case '[':
-            return '{';
-        case ']':
-            return '}';
-        case '\\':
-            return '|';
-        case '~':
-            return '^';
-        default:
-            return charstr_lcase_char(c);
-    }
-}
-
-static char *name_to_key(const char *name)
-{
-    char *key = charstr_dupstr(name);
-    for (char *s = key; *s; s++)
-        *s = scandinavian_lcase(*s);
-    return key;
-}
-
 static bool valid_channel_name(const char *name)
 {
     if (strlen(name) > 50)
@@ -683,35 +654,6 @@ static void destroy_channel_window(GtkWidget *, gpointer user_data)
     fsfree(channel);
 }
 
-static void destroy_channel_id(channel_id_t *chid)
-{
-    fsfree(chid->key);
-    fsfree(chid->name);
-    fsfree(chid);
-}
-
-static void set_autojoin(app_t *app, const char *name, bool enabled)
-{
-    char *key = name_to_key(name);
-    avl_elem_t *ae = avl_tree_get(app->config.autojoins, key);
-    if (enabled) {
-        if (ae) {
-            fsfree(key);
-            return;
-        }
-        channel_id_t *chid = fsalloc(sizeof *chid);
-        chid->key = key;
-        chid->name = charstr_dupstr(name);
-        avl_tree_put(app->config.autojoins, key, chid);
-    } else {
-        fsfree(key);
-        if (!ae)
-            return;
-        destroy_channel_id((channel_id_t *) avl_elem_get_value(ae));
-        avl_tree_remove(app->config.autojoins, ae);
-    }
-}
-
 static void autojoin_changed(GSimpleAction *action, GVariant *value,
                              gpointer user_data)
 {
@@ -719,7 +661,7 @@ static void autojoin_changed(GSimpleAction *action, GVariant *value,
     channel->autojoin = g_variant_get_boolean(value);
     g_simple_action_set_state(action, value);
     set_autojoin(channel->app, channel->name, channel->autojoin);
-    store_settings(channel->app);
+    save_session(channel->app);
 }
 
 static void add_channel_actions(channel_t *channel, GActionGroup *actions)
@@ -744,6 +686,23 @@ static void add_window_actions(GtkWidget *window, channel_t *channel)
     if (channel)
         add_channel_actions(channel, actions);
     gtk_widget_insert_action_group(window, "win", actions);
+}
+
+static void replay_channel(channel_t *channel)
+{
+    for (list_elem_t *e = list_get_first(channel->app->message_log); e;
+         e = list_next(e)) {
+        json_thing_t *message = (json_thing_t *) list_elem_get_value(e);
+        const char *key, *from, *tag, *text;
+        unsigned long long t;
+        if (json_object_get_string(message, "channel", &key) &&
+            !strcmp(key, channel->key) &&
+            json_object_get_unsigned(message, "time", &t) &&
+            json_object_get_string(message, "from", &from) &&
+            json_object_get_string(message, "tag", &tag) &&
+            json_object_get_string(message, "text", &text))
+            play_message(channel, t, from, tag, text);
+    }
 }
 
 static channel_t *make_channel(app_t *app, char *key, const gchar *name,
@@ -776,6 +735,7 @@ static channel_t *make_channel(app_t *app, char *key, const gchar *name,
     gtk_widget_show_all(channel->window);
     g_signal_connect(G_OBJECT(channel->window), "destroy",
                      G_CALLBACK(destroy_channel_window), channel);
+    replay_channel(channel);
     return channel;
 }
 
@@ -984,57 +944,6 @@ static GtkWidget *ensure_main_window(app_t *app)
     return app->gui.app_window;
 }
 
-static void make_parent_dirs(int dirfd, const char *pathname)
-{
-    char *copy = charstr_dupstr(pathname);
-    for (char *p = copy; *p; p++)
-        if (*p == '/') {
-            *p = '\0';
-            mkdirat(dirfd, copy, S_IRWXU);
-            *p = '/';
-        }
-    fsfree(copy);
-}
-
-static json_thing_t *build_settings(app_t *app)
-{
-    json_thing_t *cfg = json_make_object();
-    json_add_to_object(cfg, "nick", json_make_string(app->config.nick));
-    json_add_to_object(cfg, "full_name", json_make_string(app->config.name));
-    json_add_to_object(cfg, "server", json_make_string(app->config.server));
-    json_add_to_object(cfg, "port", json_make_integer(app->config.port));
-    json_add_to_object(cfg, "use_tls", json_make_boolean(app->config.use_tls));
-    json_thing_t *channel_cfgs = json_make_array();
-    json_add_to_object(cfg, "channels", channel_cfgs);
-    for (avl_elem_t *ae = avl_tree_get_first(app->config.autojoins); ae;
-         ae = avl_tree_next(ae)) {
-        channel_id_t *chid = (channel_id_t *) avl_elem_get_value(ae);
-        json_thing_t *channel_cfg = json_make_object();
-        json_add_to_array(channel_cfgs, channel_cfg);
-        json_add_to_object(channel_cfg, "name", json_make_string(chid->name));
-    }
-    return cfg;
-}
-
-static void store_settings(app_t *app)
-{
-    if (!app->opts.state_file)
-        return;
-    make_parent_dirs(app->home_dir_fd, app->opts.state_file);
-    int fd = openat(app->home_dir_fd, app->opts.state_file,
-                    O_WRONLY | O_CREAT | O_TRUNC, 0660);
-    if (fd < 0) {
-        fprintf(stderr, PROGRAM ": cannot open %s\n", app->opts.state_file);
-        return;
-    }
-    FILE *statef = fdopen(fd, "w");
-    assert(statef);
-    json_thing_t *cfg = build_settings(app);
-    json_utf8_dump(cfg, statef);
-    json_destroy_thing(cfg);
-    fclose(statef);
-}
-
 static void collect_autojoins(app_t *app)
 {
     avl_tree_t *old_autojoins = avl_tree_copy(app->config.autojoins);
@@ -1092,7 +1001,7 @@ static void configuration_ok_response(app_t *app)
     collect_autojoins(app);
     gtk_widget_destroy(app->gui.configuration_window);
     app->gui.configuration_window = NULL;
-    store_settings(app);
+    save_session(app);
     set_state(app, CONNECTING);
     ensure_main_window(app);
     connect_to_irc_server(app);
@@ -1133,85 +1042,6 @@ static gboolean configuration_dialog_key_press(GtkWidget *, GdkEventKey *event,
     return FALSE;
 }
 
-static void get_app_settings(app_t *app, json_thing_t *cfg)
-{
-    const char *nick;
-    if (json_object_get_string(cfg, "nick", &nick)) {
-        fsfree(app->config.nick);
-        app->config.nick = charstr_dupstr(nick);
-    }
-    const char *full_name;
-    if (json_object_get_string(cfg, "full_name", &full_name)) {
-        fsfree(app->config.name);
-        app->config.name = charstr_dupstr(full_name);
-    }
-    const char *server;
-    if (json_object_get_string(cfg, "server", &server)) {
-        fsfree(app->config.server);
-        app->config.server = charstr_dupstr(server);
-    }
-    long long port;
-    if (json_object_get_integer(cfg, "port", &port))
-        app->config.port = port;
-    bool use_tls;
-    if (json_object_get_boolean(cfg, "use_tls", &use_tls))
-        app->config.use_tls = use_tls;
-}
-
-static void clear_autojoins(app_t *app)
-{
-    while (!avl_tree_empty(app->config.autojoins)) {
-        avl_elem_t *ae = avl_tree_pop_first(app->config.autojoins);
-        channel_id_t *chid = (channel_id_t *) avl_elem_get_value(ae);
-        destroy_channel_id(chid);
-        destroy_avl_element(ae);
-    }
-}
-
-static void get_channel_settings(app_t *app, json_thing_t *cfg)
-{
-    clear_autojoins(app);
-    json_thing_t *channel_cfgs;
-    if (!json_object_get_array(cfg, "channels", &channel_cfgs))
-        return;
-    for (json_element_t *je = json_array_first(channel_cfgs); je;
-         je = json_element_next(je)) {
-        json_thing_t *channel_cfg = json_element_value(je);
-        const char *name;
-        if (json_thing_type(channel_cfg) != JSON_OBJECT ||
-            !json_object_get_string(channel_cfg, "name", &name))
-            continue;
-        set_autojoin(app, name, true);
-    }
-}
-
-static void get_settings(app_t *app)
-{
-    app->config.nick = charstr_dupstr("");
-    app->config.name = charstr_dupstr("");
-    app->config.server = charstr_dupstr(IRC_DEFAULT_SERVER);
-    app->config.port = IRC_DEFAULT_PORT;
-    app->config.use_tls = IRC_DEFAULT_USE_TLS;
-    if (app->opts.reset_state || !app->opts.state_file)
-        return;
-    int fd = openat(app->home_dir_fd, app->opts.state_file, O_RDONLY);
-    if (fd < 0)
-        return;
-    FILE *statef = fdopen(fd, "r");
-    assert(statef);
-    json_thing_t *cfg = json_utf8_decode_file(statef, 1000000);
-    fclose(statef);
-    if (!cfg)
-        return;
-    if (json_thing_type(cfg) != JSON_OBJECT) {
-        json_destroy_thing(cfg);
-        return;
-    }
-    get_app_settings(app, cfg);
-    get_channel_settings(app, cfg);
-    json_destroy_thing(cfg);
-}
-
 static GtkWidget *autojoin_gui(GtkWidget *content_area, const gchar *prompt,
                                avl_tree_t *autojoins)
 {
@@ -1247,7 +1077,7 @@ static void configure(app_t *app)
 {
     assert(app->state == CONFIGURING);
     assert(!app->gui.configuration_window);
-    get_settings(app);
+    load_session(app);
     app->gui.configuration_window = gtk_application_window_new(app->gui.gapp);
     GtkWidget *dialog =
         gtk_dialog_new_with_buttons(APP_NAME ": Configuration",
@@ -1376,6 +1206,7 @@ int main(int argc, char **argv)
         .state = CONFIGURING,
         .channels = make_hash_table(1000, (void *) hash_string,
                                     (void *) strcmp),
+        .message_log = make_list(),
     };
     const char *home = getenv("HOME");
     if (!home || *home != '/') {
@@ -1393,6 +1224,8 @@ int main(int argc, char **argv)
     int status = g_application_run(G_APPLICATION(app.gui.gapp), argc, argv);
     if (app.async)
         destroy_async(app.async);
+    list_foreach(app.message_log, (void *) json_destroy_thing, NULL);
+    destroy_list(app.message_log);
     /* TODO: destroy channnels */
     /* TODO: disconnect */
     fsfree(app.config.nick);

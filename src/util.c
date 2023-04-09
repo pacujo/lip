@@ -1,5 +1,13 @@
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <assert.h>
+#include <encjson.h>
 #include <fsdyn/charstr.h>
 #include "util.h"
+
+static const char *const IRC_DEFAULT_SERVER = "irc.oftc.net";
+static const int IRC_DEFAULT_PORT = 6697;
+static const bool IRC_DEFAULT_USE_TLS = true;
 
 GtkTextBuffer *get_console(app_t *app)
 {
@@ -18,9 +26,9 @@ static bool is_console_at_bottom(app_t *app)
 
 const char *TIMESTAMP_PATTERN = "[%R] ";
 
-static void append_timestamp(struct tm *timestamp, GtkTextBuffer *buffer)
+static void append_timestamp(struct tm *timestamp, time_t t,
+                             GtkTextBuffer *buffer)
 {
-    time_t t = time(NULL);
     struct tm now;
     localtime_r(&t, &now);
     if (now.tm_year != timestamp->tm_year ||
@@ -40,7 +48,7 @@ bool begin_console_line(app_t *app, GtkTextBuffer **console)
 {
     bool at_bottom = is_console_at_bottom(app);
     *console = get_console(app);
-    append_timestamp(&app->gui.timestamp, *console);
+    append_timestamp(&app->gui.timestamp, time(NULL), *console);
     return at_bottom;
 }
 
@@ -90,28 +98,61 @@ static void update_cursor(GtkTextBuffer *chat_buffer)
     gtk_text_buffer_place_cursor(chat_buffer, &end);
 }
 
-void append_message(channel_t *channel, const gchar *from,
-                    const gchar *tag_name, const gchar *format, ...)
+void play_message(channel_t *channel, time_t t, const char *from,
+                  const char *tag_name, const char *text)
 {
     GtkTextBuffer *chat_buffer =
         gtk_text_view_get_buffer(GTK_TEXT_VIEW(channel->chat_view));
     update_cursor(chat_buffer);
-    append_timestamp(&channel->timestamp, chat_buffer);
+    append_timestamp(&channel->timestamp, t, chat_buffer);
     if (from) {
         append_text(chat_buffer, from, NULL);
         append_text(chat_buffer, ">", NULL);
     }
-    va_list ap;
-    va_start(ap, format);
-    char *text = charstr_vprintf(format, ap);
-    va_end(ap);
     append_text(chat_buffer, text, tag_name);
-    fsfree(text);
     append_text(chat_buffer, "\n", NULL);
     GtkTextIter end;
     gtk_text_buffer_get_end_iter(chat_buffer, &end);
     gtk_text_view_scroll_to_iter(GTK_TEXT_VIEW(channel->chat_view), &end,
                                  0.05, TRUE, 0.0, 1.0);
+}
+
+static void log_message(channel_t *channel, time_t t, const char *from,
+                        const char *tag_name, const char *text)
+{
+    enum { LOG_LIMIT = 200000 };
+    app_t *app = channel->app;
+    while (app->message_log_size > LOG_LIMIT) {
+        json_thing_t *oldest =
+            (json_thing_t *) list_pop_first(app->message_log);
+        const char *old_text;
+        if (!json_object_get_string(oldest, "text", &old_text))
+            assert(false);
+        app->message_log_size -= strlen(old_text);
+        json_destroy_thing(oldest);
+    }
+    json_thing_t *newest = json_make_object();
+    list_append(app->message_log, newest);
+    json_add_to_object(newest, "channel", json_make_string(channel->key));
+    json_add_to_object(newest, "time", json_make_unsigned(t));
+    json_add_to_object(newest, "from", json_make_string(from));
+    json_add_to_object(newest, "tag", json_make_string(tag_name));
+    json_add_to_object(newest, "text", json_make_string(text));
+    app->message_log_size += strlen(text);
+    save_session(app);
+}
+
+void append_message(channel_t *channel, const gchar *from,
+                    const gchar *tag_name, const gchar *format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    char *text = charstr_vprintf(format, ap);
+    va_end(ap);
+    time_t t = time(NULL);
+    play_message(channel, t, from, tag_name, text);
+    log_message(channel, t, from, tag_name, text);
+    fsfree(text);
 }
 
 bool valid_server(const char *address)
@@ -197,3 +238,200 @@ void logged_command(app_t *app, const char *prefix, const char *command,
     console_scroll_maybe(app, at_bottom);
 }
 
+static void get_app_settings(app_t *app, json_thing_t *cfg)
+{
+    const char *nick;
+    if (json_object_get_string(cfg, "nick", &nick)) {
+        fsfree(app->config.nick);
+        app->config.nick = charstr_dupstr(nick);
+    }
+    const char *full_name;
+    if (json_object_get_string(cfg, "full_name", &full_name)) {
+        fsfree(app->config.name);
+        app->config.name = charstr_dupstr(full_name);
+    }
+    const char *server;
+    if (json_object_get_string(cfg, "server", &server)) {
+        fsfree(app->config.server);
+        app->config.server = charstr_dupstr(server);
+    }
+    long long port;
+    if (json_object_get_integer(cfg, "port", &port))
+        app->config.port = port;
+    bool use_tls;
+    if (json_object_get_boolean(cfg, "use_tls", &use_tls))
+        app->config.use_tls = use_tls;
+    list_foreach(app->message_log, (void *) json_destroy_thing, NULL);
+    json_thing_t *messages;
+    if (json_object_get_array(cfg, "messages", &messages))
+        for (json_element_t *je = json_array_first(messages); je;
+             je = json_element_next(je)) {
+            json_thing_t *message = json_element_value(je);
+            list_append(app->message_log, json_clone(message));
+        }
+}
+
+void destroy_channel_id(channel_id_t *chid)
+{
+    fsfree(chid->key);
+    fsfree(chid->name);
+    fsfree(chid);
+}
+
+void clear_autojoins(app_t *app)
+{
+    while (!avl_tree_empty(app->config.autojoins)) {
+        avl_elem_t *ae = avl_tree_pop_first(app->config.autojoins);
+        channel_id_t *chid = (channel_id_t *) avl_elem_get_value(ae);
+        destroy_channel_id(chid);
+        destroy_avl_element(ae);
+    }
+}
+
+static void get_channel_settings(app_t *app, json_thing_t *cfg)
+{
+    clear_autojoins(app);
+    json_thing_t *channel_cfgs;
+    if (!json_object_get_array(cfg, "channels", &channel_cfgs))
+        return;
+    for (json_element_t *je = json_array_first(channel_cfgs); je;
+         je = json_element_next(je)) {
+        json_thing_t *channel_cfg = json_element_value(je);
+        const char *name;
+        if (json_thing_type(channel_cfg) != JSON_OBJECT ||
+            !json_object_get_string(channel_cfg, "name", &name))
+            continue;
+        set_autojoin(app, name, true);
+    }
+}
+
+void load_session(app_t *app)
+{
+    app->config.nick = charstr_dupstr("");
+    app->config.name = charstr_dupstr("");
+    app->config.server = charstr_dupstr(IRC_DEFAULT_SERVER);
+    app->config.port = IRC_DEFAULT_PORT;
+    app->config.use_tls = IRC_DEFAULT_USE_TLS;
+    if (app->opts.reset_state || !app->opts.state_file)
+        return;
+    int fd = openat(app->home_dir_fd, app->opts.state_file, O_RDONLY);
+    if (fd < 0)
+        return;
+    FILE *statef = fdopen(fd, "r");
+    assert(statef);
+    json_thing_t *cfg = json_utf8_decode_file(statef, 1000000);
+    fclose(statef);
+    if (!cfg)
+        return;
+    if (json_thing_type(cfg) != JSON_OBJECT) {
+        json_destroy_thing(cfg);
+        return;
+    }
+    get_app_settings(app, cfg);
+    get_channel_settings(app, cfg);
+    json_destroy_thing(cfg);
+}
+
+static json_thing_t *build_settings(app_t *app)
+{
+    json_thing_t *cfg = json_make_object();
+    json_add_to_object(cfg, "nick", json_make_string(app->config.nick));
+    json_add_to_object(cfg, "full_name", json_make_string(app->config.name));
+    json_add_to_object(cfg, "server", json_make_string(app->config.server));
+    json_add_to_object(cfg, "port", json_make_integer(app->config.port));
+    json_add_to_object(cfg, "use_tls", json_make_boolean(app->config.use_tls));
+    json_thing_t *channel_cfgs = json_make_array();
+    json_add_to_object(cfg, "channels", channel_cfgs);
+    for (avl_elem_t *ae = avl_tree_get_first(app->config.autojoins); ae;
+         ae = avl_tree_next(ae)) {
+        channel_id_t *chid = (channel_id_t *) avl_elem_get_value(ae);
+        json_thing_t *channel_cfg = json_make_object();
+        json_add_to_array(channel_cfgs, channel_cfg);
+        json_add_to_object(channel_cfg, "name", json_make_string(chid->name));
+    }
+    json_thing_t *messages = json_make_array();
+    json_add_to_object(cfg, "messages", messages);
+    for (list_elem_t *e = list_get_first(app->message_log); e;
+         e = list_next(e)) {
+        json_thing_t *message = (json_thing_t *) list_elem_get_value(e);
+        json_add_to_array(messages, json_clone(message));
+    }
+    return cfg;
+}
+
+static void make_parent_dirs(int dirfd, const char *pathname)
+{
+    char *copy = charstr_dupstr(pathname);
+    for (char *p = copy; *p; p++)
+        if (*p == '/') {
+            *p = '\0';
+            mkdirat(dirfd, copy, S_IRWXU);
+            *p = '/';
+        }
+    fsfree(copy);
+}
+
+void save_session(app_t *app)
+{
+    if (!app->opts.state_file)
+        return;
+    make_parent_dirs(app->home_dir_fd, app->opts.state_file);
+    int fd = openat(app->home_dir_fd, app->opts.state_file,
+                    O_WRONLY | O_CREAT | O_TRUNC, 0660);
+    if (fd < 0) {
+        fprintf(stderr, PROGRAM ": cannot open %s\n", app->opts.state_file);
+        return;
+    }
+    FILE *statef = fdopen(fd, "w");
+    assert(statef);
+    json_thing_t *cfg = build_settings(app);
+    json_utf8_dump(cfg, statef);
+    json_destroy_thing(cfg);
+    fclose(statef);
+}
+
+void set_autojoin(app_t *app, const char *name, bool enabled)
+{
+    char *key = name_to_key(name);
+    avl_elem_t *ae = avl_tree_get(app->config.autojoins, key);
+    if (enabled) {
+        if (ae) {
+            fsfree(key);
+            return;
+        }
+        channel_id_t *chid = fsalloc(sizeof *chid);
+        chid->key = key;
+        chid->name = charstr_dupstr(name);
+        avl_tree_put(app->config.autojoins, key, chid);
+    } else {
+        fsfree(key);
+        if (!ae)
+            return;
+        destroy_channel_id((channel_id_t *) avl_elem_get_value(ae));
+        avl_tree_remove(app->config.autojoins, ae);
+    }
+}
+
+static char scandinavian_lcase(char c)
+{
+    switch (c) {
+        case '[':
+            return '{';
+        case ']':
+            return '}';
+        case '\\':
+            return '|';
+        case '~':
+            return '^';
+        default:
+            return charstr_lcase_char(c);
+    }
+}
+
+char *name_to_key(const char *name)
+{
+    char *key = charstr_dupstr(name);
+    for (char *s = key; *s; s++)
+        *s = scandinavian_lcase(*s);
+    return key;
+}
