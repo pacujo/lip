@@ -79,7 +79,7 @@ static void warn(app_t *app, const char *format, ...)
 static void note_join(app_t *app, const prefix_parts_t *parts,
                       const char *channel_name)
 {
-    channel_t *channel = open_channel(app, channel_name, 0);
+    channel_t *channel = open_channel(app, channel_name, 0, false);
     if (!channel) {
         if (!parts->server)
             info(app, "%s joined %s", parts->nick, channel->name);
@@ -197,8 +197,8 @@ static void post(app_t *app, const prefix_parts_t *parts, const char *receiver,
     if (valid_nick(receiver)) {
         if (strcmp(receiver, app->config.nick))
             return;             /* not for me */
-        channel = open_channel(app, sender, LIMIT);
-    } else channel = open_channel(app, receiver, LIMIT);
+        channel = open_channel(app, sender, LIMIT, false);
+    } else channel = open_channel(app, receiver, LIMIT, false);
     if (!channel) {
         warn(app, "Too many channels");
         return;

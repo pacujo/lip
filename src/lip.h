@@ -8,6 +8,7 @@
 #include <async/tcp_client.h>
 #include <async/tls_connection.h>
 #include <async/queuestream.h>
+#include <fsdyn/avltree.h>
 #include <fsdyn/hashtable.h>
 
 #define PROGRAM "lip"
@@ -21,6 +22,10 @@ typedef enum {
 } state_t;
 
 typedef struct {
+    char *key, *name;
+} channel_id_t;
+
+typedef struct {
     struct {
         char *trace_include, *trace_exclude;
         char *state_file;    /* NULL, absolute or relative to $HOME */
@@ -30,6 +35,7 @@ typedef struct {
         char *nick, *name, *server;
         int port;
         bool use_tls;
+        avl_tree_t *autojoins;  /* of channel_id_t */
     } config;
     int home_dir_fd;
     async_t *async;
@@ -52,6 +58,7 @@ typedef struct {
         GtkWidget *configuration_server;
         GtkWidget *configuration_port;
         GtkWidget *configuration_use_tls;
+        GtkWidget *configuration_autojoins;
         GtkWidget *app_window;
         GtkWidget *scrolled_window;;
         GtkWidget *console;
@@ -64,10 +71,12 @@ typedef struct {
 typedef struct {
     app_t *app;
     char *key, *name;
+    bool autojoin;
     GtkWidget *window;
     GtkWidget *chat_view;
     struct tm timestamp;
 } channel_t;
 
 void emit(app_t *app, const char *text);
-channel_t *open_channel(app_t *app, const gchar *name, unsigned limit);
+channel_t *open_channel(app_t *app, const gchar *name, unsigned limit,
+                        bool autojoin);
