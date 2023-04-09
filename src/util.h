@@ -2,6 +2,7 @@
 
 #include "lip.h"
 
+extern const char *TIMESTAMP_PATTERN;
 bool begin_console_line(app_t *app, GtkTextBuffer **console);
 void console_scroll_maybe(app_t *app, bool scroll);
 void append_text(GtkTextBuffer *chat_buffer, const gchar *text,

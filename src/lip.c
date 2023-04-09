@@ -444,10 +444,50 @@ static gboolean ignore_key_press(GtkWidget *, GdkEventKey *, gpointer)
     return TRUE;
 }
 
+static void text_dimensions(const char *text, int *width, int *height)
+{
+    GtkEntryBuffer *buf = gtk_entry_buffer_new(NULL, -1);
+    GtkWidget *entry = gtk_entry_new_with_buffer(buf);
+    PangoLayout *layout = gtk_widget_create_pango_layout(entry, text);
+    pango_layout_get_pixel_size(layout, width, height);
+    g_clear_object(&layout);
+    g_clear_object(&buf);
+}
+
+static int one_em()
+{
+    static int em = -1;
+    if (em < 0)
+        text_dimensions("m", &em, NULL);
+    return em;
+}
+
+static int one_ex()
+{
+    static int ex = -1;
+    if (ex < 0)
+        text_dimensions("x", NULL, &ex);
+    return ex;
+}
+
+static int timestamp_width()
+{
+    static int width = -1;
+    if (width < 0) {
+        struct tm zero = { 0 };
+        char tod[100];
+        strftime(tod, sizeof tod, TIMESTAMP_PATTERN, &zero);
+        text_dimensions(tod, &width, NULL);
+    }
+    return width;
+}
+
 static GtkWidget *build_passive_text_view()
 {
     GtkWidget *view = gtk_text_view_new();
     gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(view), GTK_WRAP_WORD);
+    gtk_text_view_set_indent(GTK_TEXT_VIEW(view),
+                             -timestamp_width() - one_em());
     gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(view), FALSE);
     g_signal_connect(G_OBJECT(view), "key_press_event",
                      G_CALLBACK(ignore_key_press), NULL);
@@ -510,7 +550,6 @@ static void send_message(channel_t *channel, const gchar *text)
 static gboolean on_key_press(GtkWidget *view, GdkEventKey *event,
                              gpointer user_data)
 {
-    /*printf("### %x\n", (unsigned) event->keyval);*/
     if (!is_enter_key(event))
         return FALSE;
     channel_t *channel = user_data;
@@ -552,32 +591,6 @@ static void quit_activated(GSimpleAction *action, GVariant *parameter,
 {
     app_t *app = user_data;
     quit(app);
-}
-
-static void text_dimensions(const char *text, int *width, int *height)
-{
-    GtkEntryBuffer *buf = gtk_entry_buffer_new(NULL, -1);
-    GtkWidget *entry = gtk_entry_new_with_buffer(buf);
-    PangoLayout *layout = gtk_widget_create_pango_layout(entry, text);
-    pango_layout_get_size(layout, width, height);
-    g_clear_object(&layout);
-    g_clear_object(&buf);
-}
-
-static int one_em()
-{
-    static int em = -1;
-    if (em < 0)
-        text_dimensions("m", &em, NULL);
-    return em / PANGO_SCALE;
-}
-
-static int one_ex()
-{
-    static int ex = -1;
-    if (ex < 0)
-        text_dimensions("x", NULL, &ex);
-    return ex / PANGO_SCALE;
 }
 
 static void add_margin(GtkWidget *widget)

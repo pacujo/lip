@@ -16,6 +16,8 @@ static bool is_console_at_bottom(app_t *app)
     return value + page >= upper;
 }
 
+const char *TIMESTAMP_PATTERN = "[%R] ";
+
 static void append_timestamp(struct tm *timestamp, GtkTextBuffer *buffer)
 {
     time_t t = time(NULL);
@@ -30,7 +32,7 @@ static void append_timestamp(struct tm *timestamp, GtkTextBuffer *buffer)
     }
     *timestamp = now;
     char tod[100];
-    strftime(tod, sizeof tod, "[%R] ", &now);
+    strftime(tod, sizeof tod, TIMESTAMP_PATTERN, &now);
     append_text(buffer, tod, "log");
 }
 
