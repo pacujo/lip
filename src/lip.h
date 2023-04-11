@@ -10,6 +10,7 @@
 #include <async/queuestream.h>
 #include <fsdyn/avltree.h>
 #include <fsdyn/hashtable.h>
+#include <rotatable/rotatable.h>
 
 #define PROGRAM "lip"
 #define APP_NAME "Lip"
@@ -36,8 +37,9 @@ typedef struct {
         int port;
         bool use_tls;
         avl_tree_t *autojoins;  /* of channel_id_t */
+        char *cache_directory;
     } config;
-    int home_dir_fd;
+    const char *home_dir;
     async_t *async;
     state_t state;
     tcp_client_t *client;
@@ -48,8 +50,8 @@ typedef struct {
     char input_buffer[512];
     char *input_cursor, *input_end;
     hash_table_t *channels;           /* of key -> channel_t */
-    list_t *message_log;              /* of json_thing_t */
-    size_t message_log_size;
+    rotatable_params_t cache_params;
+    rotatable_t *cache;
     struct {
         GtkApplication *gapp;
         gint default_width, default_height;
@@ -61,6 +63,7 @@ typedef struct {
         GtkWidget *configuration_port;
         GtkWidget *configuration_use_tls;
         GtkWidget *configuration_autojoins;
+        GtkWidget *configuration_cache_dir;
         GtkWidget *app_window;
         GtkWidget *scrolled_window;;
         GtkWidget *console;

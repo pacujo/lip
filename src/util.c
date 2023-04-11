@@ -8,6 +8,7 @@
 static const char *const IRC_DEFAULT_SERVER = "irc.oftc.net";
 static const int IRC_DEFAULT_PORT = 6697;
 static const bool IRC_DEFAULT_USE_TLS = true;
+static const char *const IRC_DEFAULT_CACHE_DIR = ".cache/lip/main";
 
 GtkTextBuffer *get_console(app_t *app)
 {
@@ -120,26 +121,31 @@ void play_message(channel_t *channel, time_t t, const char *from,
 static void log_message(channel_t *channel, time_t t, const char *from,
                         const char *tag_name, const char *text)
 {
-    enum { LOG_LIMIT = 200000 };
     app_t *app = channel->app;
-    while (app->message_log_size > LOG_LIMIT) {
-        json_thing_t *oldest =
-            (json_thing_t *) list_pop_first(app->message_log);
-        const char *old_text;
-        if (!json_object_get_string(oldest, "text", &old_text))
-            assert(false);
-        app->message_log_size -= strlen(old_text);
-        json_destroy_thing(oldest);
+    struct tm umt_stamp;
+    gmtime_r(&t, &umt_stamp);
+    switch (rotatable_rotate_maybe(app->cache, &umt_stamp, 0, false)) {
+        default:
+            return;             /* ? */
+        case ROTATION_OK:
+        case ROTATION_ROTATED:
+            ;
     }
-    json_thing_t *newest = json_make_object();
-    list_append(app->message_log, newest);
-    json_add_to_object(newest, "channel", json_make_string(channel->key));
-    json_add_to_object(newest, "time", json_make_unsigned(t));
-    json_add_to_object(newest, "from", json_make_string(from));
-    json_add_to_object(newest, "tag", json_make_string(tag_name));
-    json_add_to_object(newest, "text", json_make_string(text));
-    app->message_log_size += strlen(text);
-    save_session(app);
+    FILE *cachef = rotatable_file(app->cache);
+    assert(cachef);
+    json_thing_t *message = json_make_object();
+    json_add_to_object(message, "channel", json_make_string(channel->key));
+    json_add_to_object(message, "time", json_make_unsigned(t));
+    json_add_to_object(message, "from", json_make_string(from));
+    json_add_to_object(message, "tag", json_make_string(tag_name));
+    json_add_to_object(message, "text", json_make_string(text));
+    size_t size = json_utf8_encode(message, NULL, 0) + 1;
+    char *encoding = fsalloc(size);
+    json_utf8_encode(message, encoding, size);
+    json_destroy_thing(message);
+    fwrite(encoding, size, 1, cachef); /* include the terminating '\0' */
+    fsfree(encoding);
+    fflush(cachef);
 }
 
 void append_message(channel_t *channel, const gchar *from,
@@ -261,14 +267,6 @@ static void get_app_settings(app_t *app, json_thing_t *cfg)
     bool use_tls;
     if (json_object_get_boolean(cfg, "use_tls", &use_tls))
         app->config.use_tls = use_tls;
-    list_foreach(app->message_log, (void *) json_destroy_thing, NULL);
-    json_thing_t *messages;
-    if (json_object_get_array(cfg, "messages", &messages))
-        for (json_element_t *je = json_array_first(messages); je;
-             je = json_element_next(je)) {
-            json_thing_t *message = json_element_value(je);
-            list_append(app->message_log, json_clone(message));
-        }
 }
 
 void destroy_channel_id(channel_id_t *chid)
@@ -312,13 +310,13 @@ void load_session(app_t *app)
     app->config.server = charstr_dupstr(IRC_DEFAULT_SERVER);
     app->config.port = IRC_DEFAULT_PORT;
     app->config.use_tls = IRC_DEFAULT_USE_TLS;
+    app->config.cache_directory =
+        charstr_printf("%s/%s", app->home_dir, IRC_DEFAULT_CACHE_DIR);
     if (app->opts.reset_state || !app->opts.state_file)
         return;
-    int fd = openat(app->home_dir_fd, app->opts.state_file, O_RDONLY);
-    if (fd < 0)
+    FILE *statef = fopen(app->opts.state_file, "r");
+    if (!statef)
         return;
-    FILE *statef = fdopen(fd, "r");
-    assert(statef);
     json_thing_t *cfg = json_utf8_decode_file(statef, 1000000);
     fclose(statef);
     if (!cfg)
@@ -349,23 +347,16 @@ static json_thing_t *build_settings(app_t *app)
         json_add_to_array(channel_cfgs, channel_cfg);
         json_add_to_object(channel_cfg, "name", json_make_string(chid->name));
     }
-    json_thing_t *messages = json_make_array();
-    json_add_to_object(cfg, "messages", messages);
-    for (list_elem_t *e = list_get_first(app->message_log); e;
-         e = list_next(e)) {
-        json_thing_t *message = (json_thing_t *) list_elem_get_value(e);
-        json_add_to_array(messages, json_clone(message));
-    }
     return cfg;
 }
 
-static void make_parent_dirs(int dirfd, const char *pathname)
+void make_parent_dirs(const char *pathname)
 {
     char *copy = charstr_dupstr(pathname);
     for (char *p = copy; *p; p++)
         if (*p == '/') {
             *p = '\0';
-            mkdirat(dirfd, copy, S_IRWXU);
+            mkdir(copy, S_IRWXU);
             *p = '/';
         }
     fsfree(copy);
@@ -375,15 +366,12 @@ void save_session(app_t *app)
 {
     if (!app->opts.state_file)
         return;
-    make_parent_dirs(app->home_dir_fd, app->opts.state_file);
-    int fd = openat(app->home_dir_fd, app->opts.state_file,
-                    O_WRONLY | O_CREAT | O_TRUNC, 0660);
-    if (fd < 0) {
+    make_parent_dirs(app->opts.state_file);
+    FILE *statef = fopen(app->opts.state_file, "w");
+    if (!statef) {
         fprintf(stderr, PROGRAM ": cannot open %s\n", app->opts.state_file);
         return;
     }
-    FILE *statef = fdopen(fd, "w");
-    assert(statef);
     json_thing_t *cfg = build_settings(app);
     json_utf8_dump(cfg, statef);
     json_destroy_thing(cfg);

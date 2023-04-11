@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include <errno.h>
+#include <dirent.h>
 #include <assert.h>
 
 #include <glib-unix.h>
@@ -387,10 +388,9 @@ static void establish(app_t *app)
 
 FSTRACE_DECL(IRC_POLL_ASYNC, "");
 
-static gboolean poll_async(gint fd, GIOCondition condition, gpointer user_data)
+static gboolean poll_async(gint fd, GIOCondition condition, app_t *app)
 {
     FSTRACE(IRC_POLL_ASYNC);
-    app_t *app = user_data;
     return async_poll_2(app->async) >= 0 ? G_SOURCE_CONTINUE : G_SOURCE_REMOVE;
 }
 
@@ -543,11 +543,10 @@ static void send_message(channel_t *channel, const gchar *text)
 }
 
 static gboolean on_key_press(GtkWidget *view, GdkEventKey *event,
-                             gpointer user_data)
+                             channel_t *channel)
 {
     if (!is_enter_key(event))
         return FALSE;
-    channel_t *channel = user_data;
     GtkTextBuffer *buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(view));
     gchar *text = extract_text(buffer);
     append_message(channel, channel->app->config.nick, "mine", "%s", text);
@@ -645,9 +644,8 @@ static void close_activated(GSimpleAction *action, GVariant *parameter,
     gtk_window_close(GTK_WINDOW(window));
 }
 
-static void destroy_channel_window(GtkWidget *, gpointer user_data)
+static void destroy_channel_window(GtkWidget *, channel_t *channel)
 {
-    channel_t *channel = user_data;
     destroy_hash_element(hash_table_pop(channel->app->channels, channel->key));
     fsfree(channel->key);
     fsfree(channel->name);
@@ -655,9 +653,8 @@ static void destroy_channel_window(GtkWidget *, gpointer user_data)
 }
 
 static void autojoin_changed(GSimpleAction *action, GVariant *value,
-                             gpointer user_data)
+                             channel_t *channel)
 {
-    channel_t *channel = user_data;
     channel->autojoin = g_variant_get_boolean(value);
     g_simple_action_set_state(action, value);
     set_autojoin(channel->app, channel->name, channel->autojoin);
@@ -688,21 +685,68 @@ static void add_window_actions(GtkWidget *window, channel_t *channel)
     gtk_widget_insert_action_group(window, "win", actions);
 }
 
+static int message_log_filter(const struct dirent *entity)
+{
+    return charstr_skip_prefix(entity->d_name, "messages") != NULL &&
+        charstr_ends_with(entity->d_name, ".log");
+}
+
+static int message_log_cmp(const struct dirent **a, const struct dirent **b)
+{
+    return strcmp((*a)->d_name, (*b)->d_name);
+}
+
+static char *read_file(const char *pathname, size_t *count)
+{
+    enum { MAX_SIZE = 1000000 };
+    FILE *f = fopen(pathname, "r");
+    if (!f)
+        return NULL;
+    char *content = fsalloc(MAX_SIZE);
+    *count = fread(content, 1, MAX_SIZE, f);
+    fclose(f);
+    return content;
+}
+
 static void replay_channel(channel_t *channel)
 {
-    for (list_elem_t *e = list_get_first(channel->app->message_log); e;
-         e = list_next(e)) {
-        json_thing_t *message = (json_thing_t *) list_elem_get_value(e);
-        const char *key, *from, *tag, *text;
-        unsigned long long t;
-        if (json_object_get_string(message, "channel", &key) &&
-            !strcmp(key, channel->key) &&
-            json_object_get_unsigned(message, "time", &t) &&
-            json_object_get_string(message, "from", &from) &&
-            json_object_get_string(message, "tag", &tag) &&
-            json_object_get_string(message, "text", &text))
-            play_message(channel, t, from, tag, text);
+    app_t *app = channel->app;
+    struct dirent **namelist;
+    int n = scandir(app->config.cache_directory, &namelist,
+                    message_log_filter, message_log_cmp);
+    assert(n >= 0);
+    for (int i = 0; i < n; i++) {
+        char *path = charstr_printf("%s/%s", app->config.cache_directory,
+                                    namelist[i]->d_name);
+        free(namelist[i]);
+        size_t count;
+        char *content = read_file(path, &count);
+        fsfree(path);
+        if (!content)
+            continue;
+        const char *end = content + count;
+        const char *cursor = content;
+        const char *p = content;
+        while (p < end)
+            if (!*p++) {
+                json_thing_t *message = json_utf8_decode_string(cursor);
+                if (message) {
+                    const char *key, *from, *tag, *text;
+                    unsigned long long t;
+                    if (json_object_get_string(message, "channel", &key) &&
+                        !strcmp(key, channel->key) &&
+                        json_object_get_unsigned(message, "time", &t) &&
+                        json_object_get_string(message, "from", &from) &&
+                        json_object_get_string(message, "tag", &tag) &&
+                        json_object_get_string(message, "text", &text))
+                        play_message(channel, t, from, tag, text);
+                    json_destroy_thing(message);
+                }
+                cursor = p;
+            }
+        fsfree(content);
     }
+    free(namelist);
 }
 
 static channel_t *make_channel(app_t *app, char *key, const gchar *name,
@@ -809,12 +853,10 @@ static GtkWidget *entry_cell(GtkWidget *container, const gchar *prompt,
     GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, one_em());
     add_margin(hbox);
     GtkWidget *label = gtk_label_new(prompt);
-    gtk_widget_set_halign(label, GTK_ALIGN_END);
-    gtk_box_pack_start(GTK_BOX(hbox), label, TRUE, TRUE, 0);
-    GtkEntryBuffer *buf = gtk_entry_buffer_new(NULL, -1);
-    gtk_entry_buffer_set_text(buf, initial_text, -1);
-    GtkWidget *entry = gtk_entry_new_with_buffer(buf);
-    gtk_box_pack_start(GTK_BOX(hbox), entry, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(hbox), label, FALSE, FALSE, 0);
+    GtkWidget *entry = gtk_entry_new();
+    gtk_entry_set_text(GTK_ENTRY(entry), initial_text);
+    gtk_box_pack_start(GTK_BOX(hbox), entry, TRUE, TRUE, 0);
     gtk_container_add(GTK_CONTAINER(container), hbox);
     return entry;
 }
@@ -916,9 +958,8 @@ static void build_menus(app_t *app)
     g_clear_object(&builder);
 }
 
-static void destroy_main_window(GtkWidget *, gpointer user_data)
+static void destroy_main_window(GtkWidget *, app_t *app)
 {
-    app_t *app = user_data;
     app->gui.app_window = NULL;
 }
 
@@ -963,6 +1004,33 @@ static void collect_autojoins(app_t *app)
     destroy_avl_tree(old_autojoins);
 }
 
+static bool set_up_cache_directory(app_t *app, const gchar *cache_dir)
+{
+    /* Test access with a dummy seed file. */
+    char *seed = charstr_printf("%s/.seed", cache_dir);
+    make_parent_dirs(seed);
+    FILE *seedf = fopen(seed, "w");
+    fsfree(seed);
+    if (!seedf)
+        return false;
+    fclose(seedf);
+    enum { CACHE_ROTATE_SIZE = 200000 };
+    char *cache_prefix = charstr_printf("%s/messages", cache_dir);
+    app->cache_params = (rotatable_params_t) {
+        .uid = geteuid(),
+        .gid = getegid(),
+        .max_files = -1,
+        .max_seconds = -1,
+        .max_bytes = 2 * 1000 * 1000,
+    };
+    app->cache =
+        make_rotatable(cache_prefix, ".log", CACHE_ROTATE_SIZE,
+                       &app->cache_params);
+    assert(app->cache);
+    fsfree(cache_prefix);
+    return true;
+}
+
 static void configuration_ok_response(app_t *app)
 {
     const gchar *nick =
@@ -975,6 +1043,8 @@ static void configuration_ok_response(app_t *app)
         gtk_entry_get_text(GTK_ENTRY(app->gui.configuration_port));
     const gboolean use_tls =
         gtk_switch_get_state(GTK_SWITCH(app->gui.configuration_use_tls));
+    const gchar *cache_dir = 
+        gtk_entry_get_text(GTK_ENTRY(app->gui.configuration_cache_dir));
     if (!valid_nick(nick)) {
         modal_error_dialog(app->gui.configuration_window, "Bad nick");
         return;
@@ -993,12 +1063,18 @@ static void configuration_ok_response(app_t *app)
                            "Bad TCP port number");
         return;
     }
+    if (!set_up_cache_directory(app, cache_dir)) {
+        modal_error_dialog(app->gui.configuration_window,
+                           "Failed to set up cache directory");
+        return;
+    }
     app->config.nick = charstr_dupstr(nick);
     app->config.name = charstr_dupstr(name);
     app->config.server = charstr_dupstr(server);
     app->config.port = port_number;
     app->config.use_tls = use_tls;
     collect_autojoins(app);
+    app->config.cache_directory = charstr_dupstr(cache_dir);
     gtk_widget_destroy(app->gui.configuration_window);
     app->gui.configuration_window = NULL;
     save_session(app);
@@ -1042,27 +1118,57 @@ static gboolean configuration_dialog_key_press(GtkWidget *, GdkEventKey *event,
     return FALSE;
 }
 
-static GtkWidget *autojoin_gui(GtkWidget *content_area, const gchar *prompt,
-                               avl_tree_t *autojoins)
+static void configuration_dialog_change_cache(GtkButton *, app_t *app)
 {
-    if (avl_tree_empty(autojoins))
-        return NULL;
+    GtkFileChooserNative *dialog =
+        gtk_file_chooser_native_new(APP_NAME " Cache Directory",
+                                    GTK_WINDOW(app->gui.configuration_window),
+                                    GTK_FILE_CHOOSER_ACTION_CREATE_FOLDER,
+                                    "_Select",
+                                    "_Cancel");
+    gtk_file_chooser_set_show_hidden(GTK_FILE_CHOOSER(dialog), TRUE);
+    gint response = gtk_native_dialog_run(GTK_NATIVE_DIALOG(dialog));
+    if (response == GTK_RESPONSE_ACCEPT) {
+        char *path = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog));
+        gtk_entry_set_text(GTK_ENTRY(app->gui.configuration_cache_dir), path);
+        g_free(path);
+    }
+    g_object_unref(dialog);
+}
+
+static void port_gui(app_t *app, GtkWidget *content_area)
+{
+    GtkWidget *port_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, one_em());
+    gtk_container_add(GTK_CONTAINER(content_area), port_row);
+    char *port = charstr_printf("%d", app->config.port);
+    app->gui.configuration_port = entry_cell(port_row, "TCP Port", port);
+    fsfree(port);
+    app->gui.configuration_use_tls =
+        checkbox(port_row, "Use TLS", app->config.use_tls);
+    add_margin(app->gui.configuration_use_tls);
+}
+
+static void autojoin_gui(app_t *app, GtkWidget *content_area)
+{
+    if (avl_tree_empty(app->config.autojoins)) {
+        app->gui.configuration_autojoins = NULL;
+        return;
+    }
     GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     add_margin(vbox);
     gtk_box_pack_start(GTK_BOX(content_area), vbox, TRUE, TRUE, 0);
-    gtk_box_pack_start(GTK_BOX(vbox), gtk_label_new(prompt), FALSE, FALSE, 0);
-    
-
+    GtkWidget *heading = gtk_label_new("Autojoin Chats/Channels");
+    gtk_box_pack_start(GTK_BOX(vbox), heading, FALSE, FALSE, 0);
     GtkWidget *sw = gtk_scrolled_window_new(NULL, NULL);
     gtk_box_pack_start(GTK_BOX(vbox), sw, TRUE, TRUE, 0);
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(sw),
                                    GTK_POLICY_AUTOMATIC,
                                    GTK_POLICY_AUTOMATIC);
-    GtkWidget *listbox = gtk_list_box_new();
+    GtkWidget *listbox = app->gui.configuration_autojoins = gtk_list_box_new();
     gtk_container_add(GTK_CONTAINER(sw), listbox);
     gtk_list_box_set_selection_mode(GTK_LIST_BOX(listbox),
                                     GTK_SELECTION_MULTIPLE);
-    for (avl_elem_t *ae = avl_tree_get_first(autojoins); ae;
+    for (avl_elem_t *ae = avl_tree_get_first(app->config.autojoins); ae;
          ae = avl_tree_next(ae)) {
         channel_id_t *chid = (channel_id_t *) avl_elem_get_value(ae);
         GtkWidget *row = gtk_list_box_row_new();
@@ -1070,7 +1176,19 @@ static GtkWidget *autojoin_gui(GtkWidget *content_area, const gchar *prompt,
         gtk_list_box_insert(GTK_LIST_BOX(listbox), row, -1);
         gtk_list_box_select_row(GTK_LIST_BOX(listbox), GTK_LIST_BOX_ROW(row));
     }
-    return listbox;
+}
+
+static void cache_dir_gui(app_t *app, GtkWidget *content_area)
+{
+    GtkWidget *cache_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, one_em());
+    gtk_container_add(GTK_CONTAINER(content_area), cache_row);
+    app->gui.configuration_cache_dir = entry_cell(cache_row, "Cache Directory",
+                                                  app->config.cache_directory);
+    GtkWidget *change_cache = gtk_button_new_with_label("Change...");
+    add_margin(change_cache);
+    g_signal_connect(change_cache, "clicked",
+                     G_CALLBACK(configuration_dialog_change_cache), app);
+    gtk_container_add(GTK_CONTAINER(cache_row), change_cache);
 }
 
 static void configure(app_t *app)
@@ -1096,16 +1214,9 @@ static void configure(app_t *app)
         entry_cell(content_area, "Your Name", app->config.name);
     app->gui.configuration_server =
         entry_cell(content_area, "Server Host", app->config.server);
-    GtkWidget *port_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, one_em());
-    gtk_container_add(GTK_CONTAINER(content_area), port_row);
-    char *port = charstr_printf("%d", app->config.port);
-    app->gui.configuration_port = entry_cell(port_row, "TCP Port", port);
-    fsfree(port);
-    app->gui.configuration_use_tls =
-        checkbox(port_row, "Use TLS", app->config.use_tls);
-    app->gui.configuration_autojoins =
-        autojoin_gui(content_area, "Autojoin Chats/Channels",
-                     app->config.autojoins);
+    port_gui(app, content_area);
+    autojoin_gui(app, content_area);
+    cache_dir_gui(app, content_area);
     g_signal_connect(dialog, "key_press_event",
                      G_CALLBACK(configuration_dialog_key_press), app);
     gtk_widget_show_all(dialog);
@@ -1193,9 +1304,6 @@ static void add_command_options(app_t *app)
 int main(int argc, char **argv)
 {
     app_t app = {
-        .opts = {
-            .state_file = charstr_dupstr(".config/lip/state.json"),
-        },
         .config = {
             .autojoins = make_avl_tree((void *) strcmp),
         },
@@ -1206,31 +1314,28 @@ int main(int argc, char **argv)
         .state = CONFIGURING,
         .channels = make_hash_table(1000, (void *) hash_string,
                                     (void *) strcmp),
-        .message_log = make_list(),
     };
-    const char *home = getenv("HOME");
-    if (!home || *home != '/') {
+    app.home_dir = getenv("HOME");
+    if (!app.home_dir || *app.home_dir != '/') {
         fprintf(stderr, PROGRAM ": no HOME in the environment\n");
         return EXIT_FAILURE;
     }
-    app.home_dir_fd = open(home, O_DIRECTORY | O_RDONLY);
-    if (app.home_dir_fd < 0) {
-        fprintf(stderr, PROGRAM ": cannot access HOME directory\n");
-        return EXIT_FAILURE;
-    }
+    app.opts.state_file =
+        charstr_printf("%s/.config/lip/state.json", app.home_dir);
     g_signal_connect(app.gui.gapp, "activate", G_CALLBACK(activate), &app);
     g_signal_connect(app.gui.gapp, "shutdown", G_CALLBACK(shut_down), &app);
     add_command_options(&app);
     int status = g_application_run(G_APPLICATION(app.gui.gapp), argc, argv);
     if (app.async)
         destroy_async(app.async);
-    list_foreach(app.message_log, (void *) json_destroy_thing, NULL);
-    destroy_list(app.message_log);
+    if (app.cache)
+        destroy_rotatable(app.cache);
     /* TODO: destroy channnels */
     /* TODO: disconnect */
     fsfree(app.config.nick);
     fsfree(app.config.name);
     fsfree(app.config.server);
+    fsfree(app.config.cache_directory);
     g_clear_object(&app.gui.gapp);
     clear_autojoins(&app);
     destroy_avl_tree(app.config.autojoins);
