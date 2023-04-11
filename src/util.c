@@ -99,11 +99,42 @@ static void update_cursor(GtkTextBuffer *chat_buffer)
     gtk_text_buffer_place_cursor(chat_buffer, &end);
 }
 
+static bool is_date_line(const gchar *line)
+{
+    /* Each line begins either with a date or a time of day. Dates
+     * begin with a parenthesis. Times begin with a bracket. */
+    return line[0] == '(';
+}
+
+static void forget_old_message(GtkTextBuffer *chat_buffer)
+{
+    /* The first line is the date; the second line is not the date */
+    GtkTextIter line_start, line_end;
+    gtk_text_buffer_get_iter_at_line(chat_buffer, &line_start, 1);
+    gtk_text_buffer_get_iter_at_line(chat_buffer, &line_end, 2);
+    gtk_text_buffer_delete(chat_buffer, &line_start, &line_end);
+    /* Do we now have two dates in a row? */
+    gtk_text_buffer_get_iter_at_line(chat_buffer, &line_start, 1);
+    gtk_text_buffer_get_iter_at_line(chat_buffer, &line_end, 2);
+    gchar *line = gtk_text_buffer_get_text(chat_buffer,
+                                           &line_start, &line_end, FALSE);
+    if (is_date_line(line)) {
+        /* Yes, we do: remove the redundant first date. */
+        GtkTextIter start;
+        gtk_text_buffer_get_start_iter(chat_buffer, &start);
+        gtk_text_buffer_delete(chat_buffer, &start, &line_start);
+    }
+    g_free(line);
+}
+
 void play_message(channel_t *channel, time_t t, const char *from,
                   const char *tag_name, const char *text)
 {
+    enum { MAX_LINE_COUNT = 1000 };
     GtkTextBuffer *chat_buffer =
         gtk_text_view_get_buffer(GTK_TEXT_VIEW(channel->chat_view));
+    while (gtk_text_buffer_get_line_count(chat_buffer) >= MAX_LINE_COUNT)
+        forget_old_message(chat_buffer);
     update_cursor(chat_buffer);
     append_timestamp(&channel->timestamp, t, chat_buffer);
     if (from) {
