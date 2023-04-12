@@ -26,6 +26,8 @@ static GtkWidget *ensure_main_window(app_t *app);
 static const char *trace_state(void *p)
 {
     switch (*(state_t *) p) {
+        case STARTING_UP:
+            return "STARTING_UP";
         case CONFIGURING:
             return "CONFIGURING";
         case CONNECTING:
@@ -237,7 +239,8 @@ static void quit(app_t *app)
     if (app->state == ZOMBIE)
         return;
     set_state(app, ZOMBIE);
-    async_quit_loop(app->async);
+    if (app->async)
+        async_quit_loop(app->async);
     g_application_quit(G_APPLICATION(app->gui.gapp));
 }
 
@@ -527,9 +530,7 @@ static gchar *extract_text(GtkTextBuffer *buffer)
     GtkTextIter start, end;
     gtk_text_buffer_get_start_iter(buffer, &start);
     gtk_text_buffer_get_end_iter(buffer, &end);
-    gchar *text = gtk_text_buffer_get_text(buffer, &start, &end, TRUE);
-    gtk_text_buffer_set_text(buffer, "", -1);
-    return text;
+    return gtk_text_buffer_get_text(buffer, &start, &end, TRUE);
 }
 
 static void send_message(channel_t *channel, const gchar *text)
@@ -542,6 +543,18 @@ static void send_message(channel_t *channel, const gchar *text)
     emit(app, "\r\n");
 }
 
+static void modal_error_dialog(GtkWidget *parent, const gchar *text)
+{
+    GtkWidget *error_dialog =
+        gtk_message_dialog_new(GTK_WINDOW(parent),
+                               GTK_DIALOG_DESTROY_WITH_PARENT |
+                               GTK_DIALOG_MODAL,
+                               GTK_MESSAGE_ERROR, GTK_BUTTONS_OK, text);
+    gtk_widget_show_all(error_dialog);
+    gtk_dialog_run(GTK_DIALOG(error_dialog));
+    gtk_widget_destroy(error_dialog);
+}
+
 static gboolean on_key_press(GtkWidget *view, GdkEventKey *event,
                              channel_t *channel)
 {
@@ -549,8 +562,22 @@ static gboolean on_key_press(GtkWidget *view, GdkEventKey *event,
         return FALSE;
     GtkTextBuffer *buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(view));
     gchar *text = extract_text(buffer);
-    append_message(channel, channel->app->config.nick, "mine", "%s", text);
-    send_message(channel, text);
+    const gchar *msg_text = text;
+    /* Since traditional IRC clients use slashes to prefix commands,
+     * we require that an initial slash be doubled. */
+    if (text[0] == '/') {
+        if (text[1] == '/')
+            msg_text++;
+        else {
+            modal_error_dialog(channel->window,
+                               "If you really want to send an initial '/', "
+                               "double it");
+            return TRUE;
+        }
+    }
+    gtk_text_buffer_set_text(buffer, "", -1);
+    append_message(channel, channel->app->config.nick, "mine", "%s", msg_text);
+    send_message(channel, msg_text);
     g_free(text);
     return TRUE;
 }
@@ -623,18 +650,6 @@ static bool valid_channel_name(const char *name)
             default:
                 ;
         }
-}
-
-static void modal_error_dialog(GtkWidget *parent, const gchar *text)
-{
-    GtkWidget *error_dialog =
-        gtk_message_dialog_new(GTK_WINDOW(parent),
-                               GTK_DIALOG_DESTROY_WITH_PARENT |
-                               GTK_DIALOG_MODAL,
-                               GTK_MESSAGE_ERROR, GTK_BUTTONS_OK, text);
-    gtk_widget_show_all(error_dialog);
-    gtk_dialog_run(GTK_DIALOG(error_dialog));
-    gtk_widget_destroy(error_dialog);
 }
 
 static void close_activated(GSimpleAction *action, GVariant *parameter,
@@ -1223,11 +1238,30 @@ static void configure(app_t *app)
 }
 
 FSTRACE_DECL(IRC_ACTIVATE, "");
+FSTRACE_DECL(IRC_ACTIVATE_REMOTE_CONFIGURING, "");
+FSTRACE_DECL(IRC_ACTIVATE_REMOTE_CONFIGURED, "");
+FSTRACE_DECL(IRC_ACTIVATE_REMOTE_ZOMBIE, "");
 
 static void activate(GtkApplication *, app_t *app)
 {
+    switch (app->state) {
+        case STARTING_UP:
+            break;
+        case CONFIGURING:
+            FSTRACE(IRC_ACTIVATE_REMOTE_CONFIGURING);
+            return;
+        case CONNECTING:
+        case READY:
+            FSTRACE(IRC_ACTIVATE_REMOTE_CONFIGURED);
+            ensure_main_window(app);
+            return;
+        default:
+            FSTRACE(IRC_ACTIVATE_REMOTE_ZOMBIE);
+            return;
+    }
     init_tracing(app);
     FSTRACE(IRC_ACTIVATE);
+    set_state(app, CONFIGURING);
     app->async = make_async();
     attach_async_to_gtk(app);
     build_menus(app);
@@ -1311,7 +1345,7 @@ int main(int argc, char **argv)
             .gapp = gtk_application_new(APPLICATION_ID,
                                         G_APPLICATION_FLAGS_NONE),
         },
-        .state = CONFIGURING,
+        .state = STARTING_UP,
         .channels = make_hash_table(1000, (void *) hash_string,
                                     (void *) strcmp),
     };

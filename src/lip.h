@@ -16,6 +16,7 @@
 #define APP_NAME "Lip"
 
 typedef enum {
+    STARTING_UP,
     CONFIGURING,
     CONNECTING,
     READY,
