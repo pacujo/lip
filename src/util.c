@@ -45,6 +45,49 @@ static void append_timestamp(struct tm *timestamp, time_t t,
     append_text(buffer, tod, "log");
 }
 
+static gboolean ignore_key_press(GtkWidget *, GdkEventKey *, gpointer)
+{
+    return TRUE;
+}
+
+static void text_dimensions(const char *text, int *width, int *height)
+{
+    GtkEntryBuffer *buf = gtk_entry_buffer_new(NULL, -1);
+    GtkWidget *entry = gtk_entry_new_with_buffer(buf);
+    PangoLayout *layout = gtk_widget_create_pango_layout(entry, text);
+    pango_layout_get_pixel_size(layout, width, height);
+    g_clear_object(&layout);
+    g_clear_object(&buf);
+}
+
+int one_em()
+{
+    static int em = -1;
+    if (em < 0)
+        text_dimensions("m", &em, NULL);
+    return em;
+}
+
+int one_ex()
+{
+    static int ex = -1;
+    if (ex < 0)
+        text_dimensions("x", NULL, &ex);
+    return ex;
+}
+
+static int timestamp_width()
+{
+    static int width = -1;
+    if (width < 0) {
+        struct tm zero = { 0 };
+        char tod[100];
+        strftime(tod, sizeof tod, TIMESTAMP_PATTERN, &zero);
+        text_dimensions(tod, &width, NULL);
+    }
+    return width;
+}
+
 bool begin_console_line(app_t *app, GtkTextBuffer **console)
 {
     bool at_bottom = is_console_at_bottom(app);
@@ -457,6 +500,276 @@ char *name_to_key(const char *name)
     return key;
 }
 
+GtkWidget *build_passive_text_view()
+{
+    GtkWidget *view = gtk_text_view_new();
+    gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(view), GTK_WRAP_WORD);
+    gtk_text_view_set_indent(GTK_TEXT_VIEW(view),
+                             -timestamp_width() - one_em());
+    gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(view), FALSE);
+    g_signal_connect(G_OBJECT(view), "key_press_event",
+                     G_CALLBACK(ignore_key_press), NULL);
+    return view;
+}
+
+static GtkWidget *build_prompt(channel_t *channel)
+{
+    GtkWidget *view = build_passive_text_view(channel->app);
+    GtkTextBuffer *buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(view));
+    gtk_text_buffer_set_text(buffer, "⇨", -1);
+    return view;
+}
+
+bool is_enter_key(GdkEventKey *event)
+{
+    switch (event->keyval) {
+        case GDK_KEY_Return:
+        case GDK_KEY_3270_Enter:
+        case GDK_KEY_ISO_Enter:
+        case GDK_KEY_KP_Enter:
+            return true;
+        default:
+            return false;
+    }
+}
+
+static gchar *extract_text(GtkTextBuffer *buffer)
+{
+    GtkTextIter start, end;
+    gtk_text_buffer_get_start_iter(buffer, &start);
+    gtk_text_buffer_get_end_iter(buffer, &end);
+    return gtk_text_buffer_get_text(buffer, &start, &end, TRUE);
+}
+
+void modal_error_dialog(GtkWidget *parent, const gchar *text)
+{
+    GtkWidget *error_dialog =
+        gtk_message_dialog_new(GTK_WINDOW(parent),
+                               GTK_DIALOG_DESTROY_WITH_PARENT |
+                               GTK_DIALOG_MODAL,
+                               GTK_MESSAGE_ERROR, GTK_BUTTONS_OK, text);
+    gtk_widget_show_all(error_dialog);
+    gtk_dialog_run(GTK_DIALOG(error_dialog));
+    gtk_widget_destroy(error_dialog);
+}
+
+static void send_message(channel_t *channel, const gchar *text)
+{
+    app_t *app = channel->app;
+    emit(app, "PRIVMSG ");
+    emit(app, channel->name);
+    emit(app, " :");
+    emit(app, text);
+    emit(app, "\r\n");
+}
+
+static gboolean on_key_press(GtkWidget *view, GdkEventKey *event,
+                             channel_t *channel)
+{
+    if (!is_enter_key(event))
+        return FALSE;
+    GtkTextBuffer *buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(view));
+    gchar *text = extract_text(buffer);
+    const gchar *msg_text = text;
+    /* Since traditional IRC clients use slashes to prefix commands,
+     * we require that an initial slash be doubled. */
+    if (text[0] == '/') {
+        if (text[1] == '/')
+            msg_text++;
+        else {
+            modal_error_dialog(channel->window,
+                               "If you really want to send an initial '/', "
+                               "double it");
+            return TRUE;
+        }
+    }
+    gtk_text_buffer_set_text(buffer, "", -1);
+    append_message(channel, channel->app->config.nick, "mine", "%s", msg_text);
+    send_message(channel, msg_text);
+    g_free(text);
+    return TRUE;
+}
+
+static GtkWidget *build_send_pane(channel_t *channel)
+{
+    GtkWidget *view = gtk_text_view_new();
+    gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(view), GTK_WRAP_WORD);
+    g_signal_connect(G_OBJECT(view), "key_press_event",
+                     G_CALLBACK(on_key_press), channel);
+    GtkWidget *sw = gtk_scrolled_window_new(NULL, NULL);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(sw),
+                                   GTK_POLICY_AUTOMATIC,
+                                   GTK_POLICY_AUTOMATIC);
+    gtk_container_add(GTK_CONTAINER(sw), view);
+    GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_box_pack_start(GTK_BOX(hbox), build_prompt(channel), FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(hbox), sw, TRUE, TRUE, 0);
+    return hbox;
+}
+
+static void destroy_channel_window(GtkWidget *, channel_t *channel)
+{
+    channel->window = NULL;
+}
+
+static int message_log_filter(const struct dirent *entity)
+{
+    return charstr_skip_prefix(entity->d_name, "messages") != NULL &&
+        charstr_ends_with(entity->d_name, ".log");
+}
+
+static int message_log_cmp(const struct dirent **a, const struct dirent **b)
+{
+    return strcmp((*a)->d_name, (*b)->d_name);
+}
+
+static char *read_file(const char *pathname, size_t *count)
+{
+    enum { MAX_SIZE = 1000000 };
+    FILE *f = fopen(pathname, "r");
+    if (!f)
+        return NULL;
+    char *content = fsalloc(MAX_SIZE);
+    *count = fread(content, 1, MAX_SIZE, f);
+    fclose(f);
+    return content;
+}
+
+static void replay_channel(channel_t *channel)
+{
+    app_t *app = channel->app;
+    struct dirent **namelist;
+    int n = scandir(app->config.cache_directory, &namelist,
+                    message_log_filter, message_log_cmp);
+    assert(n >= 0);
+    for (int i = 0; i < n; i++) {
+        char *path = charstr_printf("%s/%s", app->config.cache_directory,
+                                    namelist[i]->d_name);
+        free(namelist[i]);
+        size_t count;
+        char *content = read_file(path, &count);
+        fsfree(path);
+        if (!content)
+            continue;
+        const char *end = content + count;
+        const char *cursor = content;
+        const char *p = content;
+        while (p < end)
+            if (!*p++) {
+                json_thing_t *message = json_utf8_decode_string(cursor);
+                if (message) {
+                    const char *key, *text;
+                    unsigned long long t;
+                    if (json_object_get_string(message, "channel", &key) &&
+                        !strcmp(key, channel->key) &&
+                        json_object_get_unsigned(message, "time", &t) &&
+                        json_object_get_string(message, "text", &text)) {
+                        const char *from, *tag;
+                        if (!json_object_get_string(message, "from", &from))
+                            from = NULL;
+                        if (!json_object_get_string(message, "tag", &tag))
+                            tag = NULL;
+                        play_message(channel, t, from, tag, text);
+                    }
+                    json_destroy_thing(message);
+                }
+                cursor = p;
+            }
+        fsfree(content);
+    }
+    free(namelist);
+}
+
+static void close_activated(GSimpleAction *action, GVariant *parameter,
+                            gpointer user_data)
+{
+    GtkWidget *window = user_data;
+    gtk_window_close(GTK_WINDOW(window));
+}
+
+static void autojoin_changed(GSimpleAction *action, GVariant *value,
+                             channel_t *channel)
+{
+    channel->autojoin = g_variant_get_boolean(value);
+    g_simple_action_set_state(action, value);
+    set_autojoin(channel->app, channel->name, channel->autojoin);
+    save_session(channel->app);
+}
+
+static void add_channel_actions(channel_t *channel, GActionGroup *actions)
+{
+    GSimpleAction *autojoin =
+        g_simple_action_new_stateful("autojoin", NULL,
+                                     g_variant_new_boolean(channel->autojoin));
+    g_signal_connect(autojoin, "change-state",
+                     G_CALLBACK(autojoin_changed), channel);
+    g_action_map_add_action(G_ACTION_MAP(actions), G_ACTION(autojoin));
+}
+
+void add_window_actions(GtkWidget *window, channel_t *channel)
+{
+    static GActionEntry win_entries[] = {
+        { "close", close_activated },
+        { NULL }
+    };
+    GActionGroup *actions = (GActionGroup *) g_simple_action_group_new();
+    g_action_map_add_action_entries(G_ACTION_MAP(actions),
+                                    win_entries, -1, window);
+    if (channel)
+        add_channel_actions(channel, actions);
+    gtk_widget_insert_action_group(window, "win", actions);
+}
+
+GtkWidget *build_chat_log(GtkWidget **view)
+{
+    GtkWidget *sw = gtk_scrolled_window_new(NULL, NULL);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(sw),
+                                   GTK_POLICY_AUTOMATIC,
+                                   GTK_POLICY_AUTOMATIC);
+    *view = build_passive_text_view();
+    GtkTextBuffer *chat_buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(*view));
+    gtk_text_buffer_create_tag(chat_buffer,
+                               "mine", "foreground", "green", NULL);
+    gtk_text_buffer_create_tag(chat_buffer,
+                               "theirs", "foreground", "red", NULL);
+    gtk_text_buffer_create_tag(chat_buffer,
+                               "log", "foreground", "cyan", NULL);
+    gtk_text_buffer_create_tag(chat_buffer,
+                               "error", "foreground", "red", NULL);
+    gtk_container_add(GTK_CONTAINER(sw), *view);
+    return sw;
+}
+
+void furnish_channel(channel_t *channel)
+{
+    if (channel->window) {
+        gtk_window_present(GTK_WINDOW(channel->window));
+        return;
+    }
+    app_t *app = channel->app;
+    channel->window = gtk_application_window_new(app->gui.gapp);
+    /* TODO: sanitize name */
+    char *window_name = charstr_printf("%s: %s", APP_NAME, channel->name);
+    gtk_window_set_title(GTK_WINDOW(channel->window), window_name);
+    fsfree(window_name);
+    add_window_actions(channel->window, channel);
+    gtk_window_set_default_size(GTK_WINDOW(channel->window),
+                                app->gui.default_width,
+                                app->gui.default_height);
+    GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    GtkWidget *log = build_chat_log(&channel->chat_view);
+    gtk_box_pack_start(GTK_BOX(vbox), log, TRUE, TRUE, 0);
+    GtkWidget *sep = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
+    gtk_box_pack_start(GTK_BOX(vbox), sep, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(vbox), build_send_pane(channel),
+                       FALSE, FALSE, 0);
+    gtk_container_add(GTK_CONTAINER(channel->window), vbox);
+    gtk_widget_show_all(channel->window);
+    g_signal_connect(G_OBJECT(channel->window), "destroy",
+                     G_CALLBACK(destroy_channel_window), channel);
+    replay_channel(channel);
+}
+
 channel_t *get_channel(app_t *app, const gchar *name)
 {
     char *key = name_to_key(name);
@@ -465,6 +778,6 @@ channel_t *get_channel(app_t *app, const gchar *name)
     if (!he)
         return NULL;
     channel_t *channel = (channel_t *) hash_elem_get_value(he);
-    gtk_window_present(GTK_WINDOW(channel->window));
+    furnish_channel(channel);
     return channel;
 }

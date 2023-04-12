@@ -3,6 +3,8 @@
 #include "lip.h"
 
 extern const char *TIMESTAMP_PATTERN;
+int one_em();
+int one_ex();
 bool begin_console_line(app_t *app, GtkTextBuffer **console);
 void console_scroll_maybe(app_t *app, bool scroll);
 void append_text(GtkTextBuffer *chat_buffer, const gchar *text,
@@ -27,4 +29,10 @@ void save_session(app_t *app);
 void make_parent_dirs(const char *pathname);
 void set_autojoin(app_t *app, const char *name, bool enabled);
 char *name_to_key(const char *name);
+GtkWidget *build_passive_text_view();
+bool is_enter_key(GdkEventKey *event);
+void modal_error_dialog(GtkWidget *parent, const gchar *text);
+void add_window_actions(GtkWidget *window, channel_t *channel);
+GtkWidget *build_chat_log(GtkWidget **view);
+void furnish_channel(channel_t *channel);
 channel_t *get_channel(app_t *app, const gchar *name);
