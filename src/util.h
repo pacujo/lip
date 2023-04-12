@@ -27,3 +27,4 @@ void save_session(app_t *app);
 void make_parent_dirs(const char *pathname);
 void set_autojoin(app_t *app, const char *name, bool enabled);
 char *name_to_key(const char *name);
+channel_t *get_channel(app_t *app, const gchar *name);

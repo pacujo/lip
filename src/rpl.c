@@ -18,10 +18,9 @@ static void append_rest(GtkTextBuffer *chat_buffer, list_elem_t *e,
 
 static void console_info(app_t *app, list_elem_t *e)
 {
-    const char *mood = NULL;
     GtkTextBuffer *console;
     bool at_bottom = begin_console_line(app, &console);
-    append_rest(console, e, mood);
+    append_rest(console, e, NULL);
     console_scroll_maybe(app, at_bottom);
 }
 
@@ -59,6 +58,54 @@ static bool rpl_motd_372(app_t *app, const char *prefix, list_t *params)
     return true;
 }
 
+//[14:47] liquid.oftc.net 353 testudo ▸= ▸#testudo ▸testudo @pacujo
+
+FSTRACE_DECL(IRC_RPL_NAMREPLY, "");
+FSTRACE_DECL(IRC_RPL_NAMREPLY_BAD_SYNTAX, "");
+FSTRACE_DECL(IRC_RPL_NAMREPLY_UNEXPECTED_CHANNEL, "NAME=%s");
+
+static bool rpl_namreply_353(app_t *app, const char *prefix, list_t *params)
+{
+    if (list_size(params) != 4) {
+        FSTRACE(IRC_RPL_NAMREPLY_BAD_SYNTAX);
+        return false;
+    }
+    list_elem_t *e = list_next(list_get_first(params));
+    const char *access_tag = list_elem_get_value(e);
+    if (strlen(access_tag) != 1) {
+        FSTRACE(IRC_RPL_NAMREPLY_BAD_SYNTAX);
+        return false;
+    }
+    const char *access;
+    switch (access_tag[0]) {
+        case '=':
+            access = "public";
+            break;
+        case '*':
+            access = "private";
+            break;
+        case '@':
+            access = "secret";
+            break;
+        default:
+            FSTRACE(IRC_RPL_NAMREPLY_BAD_SYNTAX);
+            return false;
+    }
+    e = list_next(e);
+    const char *name = list_elem_get_value(e);
+    channel_t *channel = get_channel(app, name);
+    if (!channel) {
+        FSTRACE(IRC_RPL_NAMREPLY_UNEXPECTED_CHANNEL, name);
+        return false;
+    }
+    FSTRACE(IRC_RPL_NAMREPLY);
+    const char *nicks = list_elem_get_value(list_next(e));
+    append_message(channel, NULL, NULL,
+                   "access %s, present: %s", access, nicks);
+    return true;
+}
+
+
 static void default_numeric(app_t *app, const char *prefix, const char *command,
                             list_t *params)
 {
@@ -75,9 +122,13 @@ bool numeric(app_t *app, const char *prefix, const char *command,
         case 1:
             done = rpl_welcome_001(app, prefix, params);
             break;
+        case 353:
+            done = rpl_namreply_353(app, prefix, params);
+            break;
         case 372:
             done = rpl_motd_372(app, prefix, params);
             break;
+        case 366:               /* RPL_ENDOFNAMES */
         case 376:               /* RPL_ENDOFMOTD */
             FSTRACE(IRC_RPL_IGNORED, command);
             done = true;

@@ -107,8 +107,11 @@ static char *parse_command(char *p, const char **command)
     }
 }
 
+FSTRACE_DECL(IRC_EMIT, "TEXT=%s");
+
 void emit(app_t *app, const char *text)
 {
+    FSTRACE(IRC_EMIT, text);
     stringstream_t *sstr = copy_stringstream(app->async, text);
     queuestream_enqueue(app->outq, stringstream_as_bytestream_1(sstr));
 }
@@ -746,15 +749,19 @@ static void replay_channel(channel_t *channel)
             if (!*p++) {
                 json_thing_t *message = json_utf8_decode_string(cursor);
                 if (message) {
-                    const char *key, *from, *tag, *text;
+                    const char *key, *text;
                     unsigned long long t;
                     if (json_object_get_string(message, "channel", &key) &&
                         !strcmp(key, channel->key) &&
                         json_object_get_unsigned(message, "time", &t) &&
-                        json_object_get_string(message, "from", &from) &&
-                        json_object_get_string(message, "tag", &tag) &&
-                        json_object_get_string(message, "text", &text))
+                        json_object_get_string(message, "text", &text)) {
+                        const char *from, *tag;
+                        if (!json_object_get_string(message, "from", &from))
+                            from = NULL;
+                        if (!json_object_get_string(message, "tag", &tag))
+                            tag = NULL;
                         play_message(channel, t, from, tag, text);
+                    }
                     json_destroy_thing(message);
                 }
                 cursor = p;
@@ -764,12 +771,11 @@ static void replay_channel(channel_t *channel)
     free(namelist);
 }
 
-static channel_t *make_channel(app_t *app, char *key, const gchar *name,
-                               bool autojoin)
+static channel_t *make_channel(app_t *app, const gchar *name, bool autojoin)
 {
     channel_t *channel = fsalloc(sizeof *channel);
     channel->app = app;
-    channel->key = key;
+    channel->key = name_to_key(name);
     channel->name = charstr_dupstr(name);
     channel->autojoin = autojoin;
     channel->window = gtk_application_window_new(app->gui.gapp);
@@ -801,17 +807,12 @@ static channel_t *make_channel(app_t *app, char *key, const gchar *name,
 channel_t *open_channel(app_t *app, const gchar *name, unsigned limit,
                         bool autojoin)
 {
-    char *key = name_to_key(name);
-    hash_elem_t *he = hash_table_get(app->channels, key);
-    if (he) {
-        fsfree(key);
-        channel_t *channel = (channel_t *) hash_elem_get_value(he);
-        gtk_window_present(GTK_WINDOW(channel->window));
+    channel_t *channel = get_channel(app, name);
+    if (channel)
         return channel;
-    }
     if (hash_table_size(app->channels) >= limit)
         return NULL;
-    channel_t *channel = make_channel(app, key, name, autojoin);
+    channel = make_channel(app, name, autojoin);
     hash_table_put(app->channels, channel->key, channel);
     return channel;
 }

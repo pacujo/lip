@@ -167,8 +167,10 @@ static void log_message(channel_t *channel, time_t t, const char *from,
     json_thing_t *message = json_make_object();
     json_add_to_object(message, "channel", json_make_string(channel->key));
     json_add_to_object(message, "time", json_make_unsigned(t));
-    json_add_to_object(message, "from", json_make_string(from));
-    json_add_to_object(message, "tag", json_make_string(tag_name));
+    if (from)
+        json_add_to_object(message, "from", json_make_string(from));
+    if (tag_name)
+        json_add_to_object(message, "tag", json_make_string(tag_name));
     json_add_to_object(message, "text", json_make_string(text));
     size_t size = json_utf8_encode(message, NULL, 0) + 1;
     char *encoding = fsalloc(size);
@@ -453,4 +455,16 @@ char *name_to_key(const char *name)
     for (char *s = key; *s; s++)
         *s = scandinavian_lcase(*s);
     return key;
+}
+
+channel_t *get_channel(app_t *app, const gchar *name)
+{
+    char *key = name_to_key(name);
+    hash_elem_t *he = hash_table_get(app->channels, key);
+    fsfree(key);
+    if (!he)
+        return NULL;
+    channel_t *channel = (channel_t *) hash_elem_get_value(he);
+    gtk_window_present(GTK_WINDOW(channel->window));
+    return channel;
 }
