@@ -1,6 +1,8 @@
 #include <assert.h>
 #include <fsdyn/charstr.h>
+#include <encjson.h>
 #include "ind.h"
+#include "rpl.h"
 #include "util.h"
 
 typedef struct {
@@ -77,7 +79,7 @@ static void warn(app_t *app, const char *format, ...)
 }
 
 static void note_join(app_t *app, const prefix_parts_t *parts,
-                      const char *channel_name)
+                      const char *channel_name, void *user_data)
 {
     channel_t *channel = open_channel(app, channel_name, 0, false);
     if (!channel) {
@@ -92,18 +94,38 @@ static void note_join(app_t *app, const prefix_parts_t *parts,
     }
     const char *mood = "log";
     if (!parts->server)
-        append_message(channel, mood, "%s joined", parts->nick);
+        append_message(channel, NULL, mood, "%s joined", parts->nick);
     else if (parts->user)
-        append_message(channel, mood, "%s (%s@%s) joined",
+        append_message(channel, NULL, mood, "%s (%s@%s) joined",
                        parts->nick, parts->user, parts->server);
-    else append_message(channel, mood, "%s (%s@%s) joined",
+    else append_message(channel, NULL, mood, "%s (%s@%s) joined",
                         parts->nick, parts->nick, parts->server);
+}
+
+static void distribute(app_t *app, const prefix_parts_t *parts,
+                       list_elem_t *param,
+                       void (*f)(app_t *app, const prefix_parts_t *parts,
+                                 const char *name, void *user_data),
+                       void *user_data)
+{
+    const char *recipients = list_elem_get_value(param);
+    const char *p = recipients;
+    for (;;) {
+        const char *q = strchr(p, ',');
+        if (!q)
+            break;
+        char *name = charstr_dupsubstr(p, q);
+        f(app, parts, name, user_data);
+        fsfree(name);
+        p = q + 1;
+    }
+    f(app, parts, p, user_data);
 }
 
 FSTRACE_DECL(IRC_GOT_BAD_JOIN, "");
 FSTRACE_DECL(IRC_GOT_OWN_JOIN, "");
 
-bool join(app_t *app, const char *prefix, list_t *params)
+static bool join(app_t *app, const char *prefix, list_t *params)
 {
     prefix_parts_t parts;
     if (list_size(params) != 1 || !parse_prefix(prefix, &parts)) {
@@ -120,30 +142,18 @@ bool join(app_t *app, const char *prefix, list_t *params)
         clear_prefix(&parts);
         return true;
     }
-    list_elem_t *e = list_get_first(params);
-    const char *channels = list_elem_get_value(e);
-    const char *p = channels;
-    for (;;) {
-        const char *q = strchr(p, ',');
-        if (!q)
-            break;
-        char *channel_name = charstr_dupsubstr(p, q);
-        note_join(app, &parts, channel_name);
-        fsfree(channel_name);
-        p = q + 1;
-    }
-    note_join(app, &parts, p);
+    distribute(app, &parts, list_get_first(params), note_join, NULL);
     clear_prefix(&parts);
     return true;
 }
 
-bool mode(app_t *app, const char *prefix, list_t *params)
+static bool mode(app_t *app, const char *prefix, list_t *params)
 {
     logged_command(app, prefix, "MODE", params);
     return true;
 }
 
-bool notice(app_t *app, const char *prefix, list_t *params)
+static bool notice(app_t *app, const char *prefix, list_t *params)
 {
     logged_command(app, prefix, "NOTICE", params);
     return true;
@@ -152,7 +162,7 @@ bool notice(app_t *app, const char *prefix, list_t *params)
 FSTRACE_DECL(IRC_PING_ILLEGAL, "");
 FSTRACE_DECL(IRC_PONG, "SERVER=%s SERVER2=%s");
 
-bool ping(app_t *app, const char *prefix, list_t *params)
+static bool ping(app_t *app, const char *prefix, list_t *params)
 {
     switch (list_size(params)) {
         case 1:
@@ -221,11 +231,43 @@ static bool do_ctcp(app_t *app, const char *prefix, const char *text)
     return false;
 }
 
+static void note_part(app_t *app, const prefix_parts_t *parts,
+                      const char *channel_name, void *user_data)
+{
+    channel_t *channel = get_channel(app, channel_name);
+    if (!channel)
+        return;
+    const char *mood = "log";
+    if (!parts->server)
+        append_message(channel, NULL, mood, "%s parted", parts->nick);
+    else if (parts->user)
+        append_message(channel, NULL, mood, "%s (%s@%s) parted",
+                       parts->nick, parts->user, parts->server);
+    else append_message(channel, NULL, mood, "%s (%s@%s) parted",
+                        parts->nick, parts->nick, parts->server);
+}
+
+FSTRACE_DECL(IRC_GOT_PART, "");
+FSTRACE_DECL(IRC_GOT_BAD_PART, "");
+
+static bool part(app_t *app, const char *prefix, list_t *params)
+{
+    prefix_parts_t parts;
+    if (list_empty(params) || !parse_prefix(prefix, &parts)) {
+        FSTRACE(IRC_GOT_BAD_PART);
+        return false;
+    }
+    FSTRACE(IRC_GOT_PART);
+    distribute(app, &parts, list_get_first(params), note_part, NULL);
+    clear_prefix(&parts);
+    return true;
+}
+
 FSTRACE_DECL(IRC_GOT_PRIVMSG, "");
 FSTRACE_DECL(IRC_GOT_BAD_PRIVMSG, "");
 FSTRACE_DECL(IRC_GOT_PRIVMSG_FROM_SERVER, "SERVER=%s");
 
-bool privmsg(app_t *app, const char *prefix, list_t *params)
+static bool privmsg(app_t *app, const char *prefix, list_t *params)
 {
     prefix_parts_t parts;
     if (list_size(params) != 2 || !parse_prefix(prefix, &parts)) {
@@ -259,3 +301,88 @@ bool privmsg(app_t *app, const char *prefix, list_t *params)
     clear_prefix(&parts);
     return true;
 }
+
+static json_thing_t *json_repr(const char *prefix, const char *command,
+                               list_t *params)
+{
+    json_thing_t *msg = json_make_object();
+    if (prefix)
+        json_add_to_object(msg, "prefix", json_make_string(prefix));
+    json_add_to_object(msg, "command", json_make_string(command));
+    json_thing_t *param_array = json_make_array();
+    json_add_to_object(msg, "params", param_array);
+    for (list_elem_t *e = list_get_first(params); e; e = list_next(e)) {
+        const char *param = list_elem_get_value(e);
+        json_add_to_array(param_array, json_make_string(param));
+    }
+    return msg;
+}
+
+static void dump_message(app_t *app, const char *prefix, const char *command,
+                         list_t *params)
+{
+    json_thing_t *msg = json_repr(prefix, command, params);
+    size_t size = json_utf8_prettyprint(msg, NULL, 0, 0, 2);
+    char encoding[size + 1];
+    json_utf8_prettyprint(msg, encoding, size + 1, 0, 2);
+    json_destroy_thing(msg);
+    const char *mood = "log";
+    GtkTextBuffer *console;
+    bool at_bottom = begin_console_line(app, &console);
+    append_text(console, encoding, mood);
+    append_text(console, "\n", mood);
+    console_scroll_maybe(app, at_bottom);
+}
+
+FSTRACE_DECL(IRC_DO_COMMAND, "MSG=%I");
+
+bool do_it(app_t *app, const char *prefix, const char *command, list_t *params)
+{
+    if (FSTRACE_ENABLED(IRC_DO_COMMAND)) {
+        json_thing_t *msg = json_repr(prefix, command, params);
+        FSTRACE(IRC_DO_COMMAND, json_trace, msg);
+        json_destroy_thing(msg);
+    }
+/*
+ PASS <password>
+ OPER <user> <password>
+ QUIT [ <message> ]
+ JOIN <comma-s-channels> [ <comma-s-keys> ]
+ TOPIC <channel> [<topic>]
+ NAMES <comma-s-channels>
+ LIST [<comma-s-channels> [<server>]]
+ INVITE <nick> <channel>
+ KICK <channel> <user> [<comment>]
+ VERSION [<server>]
+ STATS [<query> [<server>]]
+ LINKS [[<server>] <mask>]
+ TIME [<server>]
+ ADMIN [<server>]
+ INFO [<server>]
+ WHO [<name> [<o>]]
+ WHOIS [<server>] <comma-s-masks>
+ WHOWAS <nick> [<count> [<server>]]
+ AWAY [<message>]
+ REHASH
+ USERS [<server>]
+*/
+    bool done = false;
+    if (charstr_char_class(*command) & CHARSTR_DIGIT)
+        done = numeric(app, prefix, command, params);
+    else if (!strcmp(command, "JOIN"))
+        done = join(app, prefix, params);
+    else if (!strcmp(command, "MODE"))
+        done = mode(app, prefix, params);
+    else if (!strcmp(command, "NOTICE"))
+        done = notice(app, prefix, params);
+    else if (!strcmp(command, "PART"))
+        done = part(app, prefix, params);
+    else if (!strcmp(command, "PRIVMSG"))
+        done = privmsg(app, prefix, params);
+    else if (!strcmp(command, "PING"))
+        done = ping(app, prefix, params);
+    if (!done)
+        dump_message(app, prefix, command, params);
+    return true;
+}
+

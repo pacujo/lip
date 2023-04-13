@@ -12,7 +12,6 @@
 #include <fsdyn/charstr.h>
 #include <fsdyn/list.h>
 #include <fstrace.h>
-#include <encjson.h>
 
 #include "lip.h"
 #include "ind.h"
@@ -114,90 +113,6 @@ void emit(app_t *app, const char *text)
     FSTRACE(IRC_EMIT, text);
     stringstream_t *sstr = copy_stringstream(app->async, text);
     queuestream_enqueue(app->outq, stringstream_as_bytestream_1(sstr));
-}
-
-static json_thing_t *json_repr(const char *prefix, const char *command,
-                               list_t *params)
-{
-    json_thing_t *msg = json_make_object();
-    if (prefix)
-        json_add_to_object(msg, "prefix", json_make_string(prefix));
-    json_add_to_object(msg, "command", json_make_string(command));
-    json_thing_t *param_array = json_make_array();
-    json_add_to_object(msg, "params", param_array);
-    for (list_elem_t *e = list_get_first(params); e; e = list_next(e)) {
-        const char *param = list_elem_get_value(e);
-        json_add_to_array(param_array, json_make_string(param));
-    }
-    return msg;
-}
-
-static void dump_message(app_t *app, const char *prefix, const char *command,
-                         list_t *params)
-{
-    json_thing_t *msg = json_repr(prefix, command, params);
-    size_t size = json_utf8_prettyprint(msg, NULL, 0, 0, 2);
-    char encoding[size + 1];
-    json_utf8_prettyprint(msg, encoding, size + 1, 0, 2);
-    json_destroy_thing(msg);
-    const char *mood = "log";
-    GtkTextBuffer *console;
-    bool at_bottom = begin_console_line(app, &console);
-    append_text(console, encoding, mood);
-    append_text(console, "\n", mood);
-    console_scroll_maybe(app, at_bottom);
-}
-
-FSTRACE_DECL(IRC_DO_COMMAND, "MSG=%I");
-
-static bool do_it(app_t *app, const char *prefix, const char *command,
-                  list_t *params)
-{
-    if (FSTRACE_ENABLED(IRC_DO_COMMAND)) {
-        json_thing_t *msg = json_repr(prefix, command, params);
-        FSTRACE(IRC_DO_COMMAND, json_trace, msg);
-        json_destroy_thing(msg);
-    }
-/*
- PASS <password>
- OPER <user> <password>
- QUIT [ <message> ]
- JOIN <comma-s-channels> [ <comma-s-keys> ]
- PART <comma-s-channels>
- TOPIC <channel> [<topic>]
- NAMES <comma-s-channels>
- LIST [<comma-s-channels> [<server>]]
- INVITE <nick> <channel>
- KICK <channel> <user> [<comment>]
- VERSION [<server>]
- STATS [<query> [<server>]]
- LINKS [[<server>] <mask>]
- TIME [<server>]
- ADMIN [<server>]
- INFO [<server>]
- WHO [<name> [<o>]]
- WHOIS [<server>] <comma-s-masks>
- WHOWAS <nick> [<count> [<server>]]
- AWAY [<message>]
- REHASH
- USERS [<server>]
-*/
-    bool done = false;
-    if (charstr_char_class(*command) & CHARSTR_DIGIT)
-        done = numeric(app, prefix, command, params);
-    else if (!strcmp(command, "JOIN"))
-        done = join(app, prefix, params);
-    else if (!strcmp(command, "MODE"))
-        done = mode(app, prefix, params);
-    else if (!strcmp(command, "NOTICE"))
-        done = notice(app, prefix, params);
-    else if (!strcmp(command, "PRIVMSG"))
-        done = privmsg(app, prefix, params);
-    else if (!strcmp(command, "PING"))
-        done = ping(app, prefix, params);
-    if (!done)
-        dump_message(app, prefix, command, params);
-    return true;
 }
 
 FSTRACE_DECL(IRC_ACT_ON, "MSG=%A");

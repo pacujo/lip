@@ -100,7 +100,7 @@ static bool rpl_namreply_353(app_t *app, const char *prefix, list_t *params)
     }
     FSTRACE(IRC_RPL_NAMREPLY);
     const char *nicks = list_elem_get_value(list_next(e));
-    append_message(channel, NULL, NULL,
+    append_message(channel, NULL, "log",
                    "access %s, present: %s", access, nicks);
     return true;
 }
