@@ -7,8 +7,22 @@ env["ENV"]["PKG_CONFIG_PATH"] = os.getenv(
 env.MergeFlags(f"!pkg-config gtk+-3.0 --cflags --libs")
 env.MergeFlags(f"!pkg-config asynctls --static --cflags --libs")
 
+env.Command(
+    ["i18n.c", "i18n.h"],
+    ["i18n.xml", "i18n.json"],
+    """
+        glib-compile-resources \
+            --target=${TARGETS[0]} \
+            --sourcedir=src \
+            --generate-source $SOURCE && \
+        glib-compile-resources \
+            --target=${TARGETS[1]} \
+            --sourcedir=src \
+            --generate-header $SOURCE
+    """)
+
 env.Program(
     "lip",
-    ["lip.c", "ind.c", "rpl.c", "util.c"],
+    ["lip.c", "ind.c", "rpl.c", "util.c", "intl.c", "i18n.c"],
     CCFLAGS="-g -Wall -Werror",
 )

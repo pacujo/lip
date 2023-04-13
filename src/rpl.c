@@ -1,6 +1,7 @@
 #include <fsdyn/charstr.h>
 #include "rpl.h"
 #include "util.h"
+#include "intl.h"
 
 static void append_rest(GtkTextBuffer *chat_buffer, list_elem_t *e,
                         const gchar *tag_name)
@@ -58,8 +59,6 @@ static bool rpl_motd_372(app_t *app, const char *prefix, list_t *params)
     return true;
 }
 
-//[14:47] liquid.oftc.net 353 testudo ▸= ▸#testudo ▸testudo @pacujo
-
 FSTRACE_DECL(IRC_RPL_NAMREPLY, "");
 FSTRACE_DECL(IRC_RPL_NAMREPLY_BAD_SYNTAX, "");
 FSTRACE_DECL(IRC_RPL_NAMREPLY_UNEXPECTED_CHANNEL, "NAME=%s");
@@ -79,13 +78,13 @@ static bool rpl_namreply_353(app_t *app, const char *prefix, list_t *params)
     const char *access;
     switch (access_tag[0]) {
         case '=':
-            access = "public";
+            access = _("public");
             break;
         case '*':
-            access = "private";
+            access = _("private");
             break;
         case '@':
-            access = "secret";
+            access = _("secret");
             break;
         default:
             FSTRACE(IRC_RPL_NAMREPLY_BAD_SYNTAX);
@@ -101,7 +100,7 @@ static bool rpl_namreply_353(app_t *app, const char *prefix, list_t *params)
     FSTRACE(IRC_RPL_NAMREPLY);
     const char *nicks = list_elem_get_value(list_next(e));
     append_message(channel, NULL, "log",
-                   "access %s, present: %s", access, nicks);
+                   _("access %s, present: %s"), access, nicks);
     return true;
 }
 

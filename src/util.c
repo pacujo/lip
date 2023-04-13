@@ -4,6 +4,7 @@
 #include <encjson.h>
 #include <fsdyn/charstr.h>
 #include "util.h"
+#include "intl.h"
 
 static const char *const IRC_DEFAULT_SERVER = "irc.oftc.net";
 static const int IRC_DEFAULT_PORT = 6697;
@@ -445,7 +446,7 @@ void save_session(app_t *app)
     make_parent_dirs(app->opts.state_file);
     FILE *statef = fopen(app->opts.state_file, "w");
     if (!statef) {
-        fprintf(stderr, PROGRAM ": cannot open %s\n", app->opts.state_file);
+        fprintf(stderr, _(PROGRAM ": cannot open %s\n"), app->opts.state_file);
         return;
     }
     json_thing_t *cfg = build_settings(app);
@@ -578,8 +579,8 @@ static gboolean on_key_press(GtkWidget *view, GdkEventKey *event,
             msg_text++;
         else {
             modal_error_dialog(channel->window,
-                               "If you really want to send an initial '/', "
-                               "double it");
+                               _("If you really want to send an initial '/', "
+                                 "double it"));
             return TRUE;
         }
     }

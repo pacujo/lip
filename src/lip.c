@@ -17,6 +17,7 @@
 #include "ind.h"
 #include "rpl.h"
 #include "util.h"
+#include "intl.h"
 
 static const char *const APPLICATION_ID = "net.pacujo.lip";
 
@@ -431,7 +432,8 @@ static void join_ok_response(app_t *app)
 {
     const gchar *text = gtk_entry_get_text(GTK_ENTRY(app->gui.join_channel));
     if (!valid_nick(text) && !valid_channel_name(text)) {
-        modal_error_dialog(ensure_main_window(app), "Bad nick or channel name");
+        modal_error_dialog(ensure_main_window(app),
+                           _("Bad nick or channel name"));
         return;
     }
     join_channel(app, text, false);
@@ -511,17 +513,17 @@ static void join_activated(GSimpleAction *action, GVariant *parameter,
         return;
     }
     app->gui.join_dialog =
-        gtk_dialog_new_with_buttons("Join Channel",
+        gtk_dialog_new_with_buttons(_("Join Channel"),
                                     GTK_WINDOW(ensure_main_window(app)),
                                     GTK_DIALOG_DESTROY_WITH_PARENT,
-                                    "_Cancel", GTK_RESPONSE_CANCEL,
-                                    "_OK", GTK_RESPONSE_OK,
+                                    _("_Cancel"), GTK_RESPONSE_CANCEL,
+                                    _("_OK"), GTK_RESPONSE_OK,
                                     NULL);
     g_signal_connect_swapped(app->gui.join_dialog, "response",
                              G_CALLBACK(join_response), app);
     GtkWidget *content_area =
         gtk_dialog_get_content_area(GTK_DIALOG(app->gui.join_dialog));
-    app->gui.join_channel = entry_cell(content_area, "Channel", "");
+    app->gui.join_channel = entry_cell(content_area, _("Channel"), "");
     g_signal_connect(app->gui.join_dialog, "key_press_event",
                      G_CALLBACK(join_dialog_key_press), app);
     gtk_widget_show_all(app->gui.join_dialog);
@@ -534,6 +536,9 @@ static void accelerate(app_t *app, const gchar *action, const gchar *accel)
                                           action, accels);
 }
 
+#define LABEL "<attribute name='label' translatable='yes'>%s</attribute>"
+#define ACTION(act) "<attribute name='action'>" act "</attribute>"
+
 static void build_menus(app_t *app)
 {
     static GActionEntry app_entries[] = {
@@ -541,50 +546,52 @@ static void build_menus(app_t *app)
         { "join", join_activated },
         { NULL }
     };
-    const gchar *menu_xml =
-        "<?xml version='1.0'?>"
-        "<interface>"
-        " <menu id='menubar'>"
-        "  <section>"
-        "   <submenu>"
-        "    <attribute name='label' translatable='yes'>_File</attribute>"
-        "    <section>"
-        "     <item>"
-        "      <attribute name='label' translatable='yes'>_Close</attribute>"
-        "      <attribute name='action'>win.close</attribute>"
-        "     </item>"
-        "     <item>"
-        "      <attribute name='label' translatable='yes'>_Quit</attribute>"
-        "      <attribute name='action'>app.quit</attribute>"
-        "     </item>"
-        "    </section>"
-        "   </submenu>"
-        "   <submenu>"
-        "    <attribute name='label' translatable='yes'>_Chat</attribute>"
-        "    <section>"
-        "     <item>"
-        "      <attribute name='label' translatable='yes'>_Join...</attribute>"
-        "      <attribute name='action'>app.join</attribute>"
-        "     </item>"
-        "     <item>"
-        "      <attribute name='label' translatable='yes'>Autojoin</attribute>"
-        "      <attribute name='action'>win.autojoin</attribute>"
-        "     </item>"
-        "    </section>"
-        "   </submenu>"
-        "  </section>"
-        " </menu>"
-        "</interface>";
+    gchar *menu_xml = charstr_printf("<?xml version='1.0'?>"
+                                     "<interface>"
+                                     " <menu id='menubar'>"
+                                     "  <section>"
+                                     "   <submenu>"
+                                     "    " LABEL
+                                     "    <section>"
+                                     "     <item>"
+                                     "      " LABEL ACTION("win.close")
+                                     "     </item>"
+                                     "     <item>"
+                                     "      " LABEL ACTION("app.quit")
+                                     "     </item>"
+                                     "    </section>"
+                                     "   </submenu>"
+                                     "   <submenu>"
+                                     "    " LABEL
+                                     "    <section>"
+                                     "     <item>"
+                                     "      " LABEL ACTION("app.join")
+                                     "     </item>"
+                                     "     <item>"
+                                     "      " LABEL ACTION("win.autojoin")
+                                     "     </item>"
+                                     "    </section>"
+                                     "   </submenu>"
+                                     "  </section>"
+                                     " </menu>"
+                                     "</interface>",
+                                     _("_File"),
+                                     _("_Close"),
+                                     _("_Quit"),
+                                     _("_Chat"),
+                                     _("_Join..."),
+                                     _("Autojoin"));
     g_action_map_add_action_entries(G_ACTION_MAP(app->gui.gapp),
                                     app_entries, -1, app);
-    accelerate(app, "app.join", "<Ctrl>J");
-    accelerate(app, "win.close", "<Ctrl>W");
-    accelerate(app, "app.quit", "<Ctrl>Q");
+    accelerate(app, "app.join", _("<Ctrl>J"));
+    accelerate(app, "win.close", _("<Ctrl>W"));
+    accelerate(app, "app.quit", _("<Ctrl>Q"));
     GtkBuilder *builder = gtk_builder_new_from_string(menu_xml, -1);
     GMenuModel *model =
         G_MENU_MODEL(gtk_builder_get_object(builder, "menubar"));
     gtk_application_set_menubar(app->gui.gapp, model);
     g_clear_object(&builder);
+    fsfree(menu_xml);
 }
 
 static void destroy_main_window(GtkWidget *, app_t *app)
@@ -675,26 +682,26 @@ static void configuration_ok_response(app_t *app)
     const gchar *cache_dir = 
         gtk_entry_get_text(GTK_ENTRY(app->gui.configuration_cache_dir));
     if (!valid_nick(nick)) {
-        modal_error_dialog(app->gui.configuration_window, "Bad nick");
+        modal_error_dialog(app->gui.configuration_window, _("Bad nick"));
         return;
     }
     if (!valid_name(name)) {
-        modal_error_dialog(app->gui.configuration_window, "Bad name");
+        modal_error_dialog(app->gui.configuration_window, _("Bad name"));
         return;
     }
     if (!valid_server(server)) {
-        modal_error_dialog(app->gui.configuration_window, "Bad server host");
+        modal_error_dialog(app->gui.configuration_window, _("Bad server host"));
         return;
     }
     int port_number;
     if (!valid_tcp_port(port, &port_number)) {
         modal_error_dialog(app->gui.configuration_window,
-                           "Bad TCP port number");
+                           _("Bad TCP port number"));
         return;
     }
     if (!set_up_cache_directory(app, cache_dir)) {
         modal_error_dialog(app->gui.configuration_window,
-                           "Failed to set up cache directory");
+                           _("Failed to set up cache directory"));
         return;
     }
     app->config.nick = charstr_dupstr(nick);
@@ -750,11 +757,11 @@ static gboolean configuration_dialog_key_press(GtkWidget *, GdkEventKey *event,
 static void configuration_dialog_change_cache(GtkButton *, app_t *app)
 {
     GtkFileChooserNative *dialog =
-        gtk_file_chooser_native_new(APP_NAME " Cache Directory",
+        gtk_file_chooser_native_new(_(APP_NAME ": Cache Directory"),
                                     GTK_WINDOW(app->gui.configuration_window),
                                     GTK_FILE_CHOOSER_ACTION_CREATE_FOLDER,
-                                    "_Select",
-                                    "_Cancel");
+                                    _("_Select"),
+                                    _("_Cancel"));
     gtk_file_chooser_set_show_hidden(GTK_FILE_CHOOSER(dialog), TRUE);
     gint response = gtk_native_dialog_run(GTK_NATIVE_DIALOG(dialog));
     if (response == GTK_RESPONSE_ACCEPT) {
@@ -770,10 +777,10 @@ static void port_gui(app_t *app, GtkWidget *content_area)
     GtkWidget *port_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, one_em());
     gtk_container_add(GTK_CONTAINER(content_area), port_row);
     char *port = charstr_printf("%d", app->config.port);
-    app->gui.configuration_port = entry_cell(port_row, "TCP Port", port);
+    app->gui.configuration_port = entry_cell(port_row, _("TCP Port"), port);
     fsfree(port);
     app->gui.configuration_use_tls =
-        checkbox(port_row, "Use TLS", app->config.use_tls);
+        checkbox(port_row, _("Use TLS"), app->config.use_tls);
     add_margin(app->gui.configuration_use_tls);
 }
 
@@ -786,7 +793,7 @@ static void autojoin_gui(app_t *app, GtkWidget *content_area)
     GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     add_margin(vbox);
     gtk_box_pack_start(GTK_BOX(content_area), vbox, TRUE, TRUE, 0);
-    GtkWidget *heading = gtk_label_new("Autojoin Chats/Channels");
+    GtkWidget *heading = gtk_label_new(_("Autojoin Chats/Channels"));
     gtk_box_pack_start(GTK_BOX(vbox), heading, FALSE, FALSE, 0);
     GtkWidget *sw = gtk_scrolled_window_new(NULL, NULL);
     gtk_box_pack_start(GTK_BOX(vbox), sw, TRUE, TRUE, 0);
@@ -811,9 +818,10 @@ static void cache_dir_gui(app_t *app, GtkWidget *content_area)
 {
     GtkWidget *cache_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, one_em());
     gtk_container_add(GTK_CONTAINER(content_area), cache_row);
-    app->gui.configuration_cache_dir = entry_cell(cache_row, "Cache Directory",
+    app->gui.configuration_cache_dir = entry_cell(cache_row,
+                                                  _("Cache Directory"),
                                                   app->config.cache_directory);
-    GtkWidget *change_cache = gtk_button_new_with_label("Change...");
+    GtkWidget *change_cache = gtk_button_new_with_label(_("Change..."));
     add_margin(change_cache);
     g_signal_connect(change_cache, "clicked",
                      G_CALLBACK(configuration_dialog_change_cache), app);
@@ -827,22 +835,22 @@ static void configure(app_t *app)
     load_session(app);
     app->gui.configuration_window = gtk_application_window_new(app->gui.gapp);
     GtkWidget *dialog =
-        gtk_dialog_new_with_buttons(APP_NAME ": Configuration",
+        gtk_dialog_new_with_buttons(_(APP_NAME ": Configuration"),
                                     GTK_WINDOW(app->gui.configuration_window),
                                     GTK_DIALOG_DESTROY_WITH_PARENT,
-                                    "_Cancel", GTK_RESPONSE_CANCEL,
-                                    "_OK", GTK_RESPONSE_OK,
+                                    _("_Cancel"), GTK_RESPONSE_CANCEL,
+                                    _("_OK"), GTK_RESPONSE_OK,
                                     NULL);
     g_signal_connect_swapped(dialog, "response",
                              G_CALLBACK(configuration_response), app);
     GtkWidget *content_area =
         gtk_dialog_get_content_area(GTK_DIALOG(dialog));
     app->gui.configuration_nick =
-        entry_cell(content_area, "Your Nick", app->config.nick);
+        entry_cell(content_area, _("Your Nick"), app->config.nick);
     app->gui.configuration_name =
-        entry_cell(content_area, "Your Name", app->config.name);
+        entry_cell(content_area, _("Your Name"), app->config.name);
     app->gui.configuration_server =
-        entry_cell(content_area, "Server Host", app->config.server);
+        entry_cell(content_area, _("Server Host"), app->config.server);
     port_gui(app, content_area);
     autojoin_gui(app, content_area);
     cache_dir_gui(app, content_area);
@@ -927,24 +935,25 @@ static void add_command_options(app_t *app)
     g_application_add_main_option(G_APPLICATION(app->gui.gapp),
                                   "state", 's',
                                   G_OPTION_FLAG_IN_MAIN, G_OPTION_ARG_STRING,
-                                  "State file (absolute or relative to $HOME)",
-                                  "PATH");
+                                  _("State file "
+                                    "(absolute or relative to $HOME)"),
+                                  _("PATH"));
     g_application_add_main_option(G_APPLICATION(app->gui.gapp),
                                   "stateless", 0,
                                   G_OPTION_FLAG_IN_MAIN, G_OPTION_ARG_NONE,
-                                  "No state file", NULL);
+                                  _("No state file"), NULL);
     g_application_add_main_option(G_APPLICATION(app->gui.gapp),
                                   "reset-state", 0,
                                   G_OPTION_FLAG_IN_MAIN, G_OPTION_ARG_NONE,
-                                  "Reset state file", NULL);
+                                  _("Reset state file"), NULL);
     g_application_add_main_option(G_APPLICATION(app->gui.gapp),
                                   "trace-include", 0,
                                   G_OPTION_FLAG_IN_MAIN, G_OPTION_ARG_STRING,
-                                  "Specify trace events", "REGEXP");
+                                  _("Specify trace events"), _("REGEXP"));
     g_application_add_main_option(G_APPLICATION(app->gui.gapp),
                                   "trace-exclude", 0,
                                   G_OPTION_FLAG_IN_MAIN, G_OPTION_ARG_STRING,
-                                  "Exclude trace events", "REGEXP");
+                                  _("Exclude trace events"), _("REGEXP"));
     g_signal_connect(app->gui.gapp, "handle-local-options",
                      G_CALLBACK(command_options), app);
 }
@@ -965,7 +974,7 @@ int main(int argc, char **argv)
     };
     app.home_dir = getenv("HOME");
     if (!app.home_dir || *app.home_dir != '/') {
-        fprintf(stderr, PROGRAM ": no HOME in the environment\n");
+        fprintf(stderr, _(PROGRAM ": no HOME in the environment\n"));
         return EXIT_FAILURE;
     }
     app.opts.state_file =

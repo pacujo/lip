@@ -1,0 +1,168 @@
+{
+    "%s joined %s": {
+        "fi_FI.UTF-8": "%s liittyi %s-kanavalle"
+    },
+    "%s (%s@%s) joined %s": {
+        "fi_FI.UTF-8": "%s (%s@%s) liittyi %s-kanavalle"
+    },
+    "%s (%s@%s) joined %s": {
+        "fi_FI.UTF-8": "%s (%s@%s) liittyi %s-kanavalle"
+    },
+    "%s joined": {
+        "fi_FI.UTF-8": "%s liittyi"
+    },
+    "%s (%s@%s) joined": {
+        "fi_FI.UTF-8": "%s (%s@%s) liittyi"
+    },
+    "%s (%s@%s) joined": {
+        "fi_FI.UTF-8": "%s (%s@%s) liittyi"
+    },
+    "Ignore empty receiver": {
+        "fi_FI.UTF-8": "Ohita tyhjä vastaanottaja"
+    },
+    "Too many channels": {
+        "fi_FI.UTF-8": "Liian monta kanavaa"
+    },
+    "%s parted": {
+        "fi_FI.UTF-8": "%s poistui"
+    },
+    "%s (%s@%s) parted": {
+        "fi_FI.UTF-8": "%s (%s@%s) poistui"
+    },
+    "%s (%s@%s) parted": {
+        "fi_FI.UTF-8": "%s (%s@%s) poistui"
+    },
+    "Bad nick or channel name": {
+        "fi_FI.UTF-8": "Kelvoton nikki tai kanavanimi"
+    },
+    "Join Channel": {
+        "fi_FI.UTF-8": "Liity kanavalle"
+    },
+    "_Cancel": {
+        "fi_FI.UTF-8": "_Peru"
+    },
+    "_OK": {
+        "fi_FI.UTF-8": "_OK"
+    },
+    "Channel": {
+        "fi_FI.UTF-8": "Kanava"
+    },
+    "_File": {
+        "fi_FI.UTF-8": "_Tiedosto"
+    },
+    "_Close": {
+        "fi_FI.UTF-8": "_Sulje"
+    },
+    "_Quit": {
+        "fi_FI.UTF-8": "_Lopeta"
+    },
+    "_Chat": {
+        "fi_FI.UTF-8": "_Keskustelu"
+    },
+    "_Join...": {
+        "fi_FI.UTF-8": "_Liity..."
+    },
+    "Autojoin": {
+        "fi_FI.UTF-8": "Automaattinen"
+    },
+    "<Ctrl>J": {
+        "fi_FI.UTF-8": "<Ctrl>J"
+    },
+    "<Ctrl>W": {
+        "fi_FI.UTF-8": "<Ctrl>W"
+    },
+    "<Ctrl>Q": {
+        "fi_FI.UTF-8": "<Ctrl>Q"
+    },
+    "Bad nick": {
+        "fi_FI.UTF-8": "Kelvoton nikki"
+    },
+    "Bad name": {
+        "fi_FI.UTF-8": "Kelvoton nimi"
+    },
+    "Bad server host": {
+        "fi_FI.UTF-8": "Kelvoton palvelimen nimi"
+    },
+    "Bad TCP port number": {
+        "fi_FI.UTF-8": "Kelvoton TCP-porttinumero"
+    },
+    "Failed to set up cache directory": {
+        "fi_FI.UTF-8": "Tilahakemiston valmistelu epäonnistui"
+    },
+    "Lip: Cache Directory": {
+        "fi_FI.UTF-8": "Lip: tilahakemisto"
+    },
+    "_Select": {
+        "fi_FI.UTF-8": "_Valitse"
+    },
+    "TCP Port": {
+        "fi_FI.UTF-8": "TCP-portti"
+    },
+    "Use TLS": {
+        "fi_FI.UTF-8": "Käytä TLS:ää"
+    },
+    "Autojoin Chats/Channels": {
+        "fi_FI.UTF-8": "Automaattiset keskustelut"
+    },
+    "Cache Directory": {
+        "fi_FI.UTF-8": "Tilahakemisto"
+    },
+    "Change...": {
+        "fi_FI.UTF-8": "Muuta..."
+    },
+    "Lip: Configuration": {
+        "fi_FI.UTF-8": "Lip: asetukset"
+    },
+    "Your Nick": {
+        "fi_FI.UTF-8": "Nikkisi"
+    },
+    "Your Name": {
+        "fi_FI.UTF-8": "Nimesi"
+    },
+    "Server Host": {
+        "fi_FI.UTF-8": "Palvelimen nimi"
+    },
+    "State file (absolute or relative to $HOME)": {
+        "fi_FI.UTF-8": "Tilatiedosto"
+    },
+    "PATH": {
+        "fi_FI.UTF-8": "POLKUNIMI"
+    },
+    "No state file": {
+        "fi_FI.UTF-8": "Ei tilatiedostoa"
+    },
+    "Reset state file": {
+        "fi_FI.UTF-8": "Pyyhi tilatiedosto"
+    },
+    "Specify trace events": {
+        "fi_FI.UTF-8": "Lokitettavat tapahtumat"
+    },
+    "REGEXP": {
+        "fi_FI.UTF-8": "REGEXP"
+    },
+    "Exclude trace events": {
+        "fi_FI.UTF-8": "Ohitettavat lokitapahtumat"
+    },
+    "lip: no HOME in the environment\n": {
+        "fi_FI.UTF-8": "lip: HOME-ympäristömuuttuja puuttuu"
+    },
+    "public": {
+        "fi_FI.UTF-8": "julkinen"
+    },
+    "private": {
+        "fi_FI.UTF-8": "yksityinen"
+    },
+    "secret": {
+        "fi_FI.UTF-8": "salainen"
+    },
+    "access %s, present: %s": {
+        "fi_FI.UTF-8": "%s kanava, läsnä: %s"
+    },
+    "lip: cannot open %s\n": {
+        "fi_FI.UTF-8": "lip: tiedosto ei avaudu: %s\n"
+    },
+    "If you really want to send an initial '/', double it": {
+        "fi_FI.UTF-8":
+        "Jos tosiaan haluat aloittaa viestin '/'-merkillä, tuplaa se"
+    }
+}

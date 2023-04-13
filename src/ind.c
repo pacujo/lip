@@ -4,6 +4,7 @@
 #include "ind.h"
 #include "rpl.h"
 #include "util.h"
+#include "intl.h"
 
 typedef struct {
     char *server, *nick, *user, *host;
@@ -84,21 +85,21 @@ static void note_join(app_t *app, const prefix_parts_t *parts,
     channel_t *channel = open_channel(app, channel_name, 0, false);
     if (!channel) {
         if (!parts->server)
-            info(app, "%s joined %s", parts->nick, channel->name);
+            info(app, _("%s joined %s"), parts->nick, channel->name);
         else if (parts->user)
-            info(app, "%s (%s@%s) joined %s", parts->nick, parts->user,
+            info(app, _("%s (%s@%s) joined %s"), parts->nick, parts->user,
                  parts->server, channel->name);
-        else info(app, "%s (%s@%s) joined %s", parts->nick, parts->nick,
+        else info(app, _("%s (%s@%s) joined %s"), parts->nick, parts->nick,
                   parts->server, channel->name);
         return;
     }
     const char *mood = "log";
     if (!parts->server)
-        append_message(channel, NULL, mood, "%s joined", parts->nick);
+        append_message(channel, NULL, mood, _("%s joined"), parts->nick);
     else if (parts->user)
-        append_message(channel, NULL, mood, "%s (%s@%s) joined",
+        append_message(channel, NULL, mood, _("%s (%s@%s) joined"),
                        parts->nick, parts->user, parts->server);
-    else append_message(channel, NULL, mood, "%s (%s@%s) joined",
+    else append_message(channel, NULL, mood, _("%s (%s@%s) joined"),
                         parts->nick, parts->nick, parts->server);
 }
 
@@ -198,7 +199,7 @@ static void post(app_t *app, const prefix_parts_t *parts, const char *receiver,
 {
     enum { LIMIT = 50 };
     if (!*receiver) {
-        warn(app, "Ignore empty receiver");
+        warn(app, _("Ignore empty receiver"));
         return;
     }
     const char *sender = parts->nick;
@@ -210,7 +211,7 @@ static void post(app_t *app, const prefix_parts_t *parts, const char *receiver,
         channel = open_channel(app, sender, LIMIT, false);
     } else channel = open_channel(app, receiver, LIMIT, false);
     if (!channel) {
-        warn(app, "Too many channels");
+        warn(app, _("Too many channels"));
         return;
     }
     append_message(channel, sender, "theirs", "%s", text);
@@ -239,11 +240,11 @@ static void note_part(app_t *app, const prefix_parts_t *parts,
         return;
     const char *mood = "log";
     if (!parts->server)
-        append_message(channel, NULL, mood, "%s parted", parts->nick);
+        append_message(channel, NULL, mood, _("%s parted"), parts->nick);
     else if (parts->user)
-        append_message(channel, NULL, mood, "%s (%s@%s) parted",
+        append_message(channel, NULL, mood, _("%s (%s@%s) parted"),
                        parts->nick, parts->user, parts->server);
-    else append_message(channel, NULL, mood, "%s (%s@%s) parted",
+    else append_message(channel, NULL, mood, _("%s (%s@%s) parted"),
                         parts->nick, parts->nick, parts->server);
 }
 
