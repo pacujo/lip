@@ -10,7 +10,7 @@ env.MergeFlags(f"!pkg-config asynctls --static --cflags --libs")
 env.Command(
     ["i18n.c", "i18n.h"],
     ["i18n.json", "embed.py"],
-    """${SOURCES[1]} i18n_json $TARGETS <${SOURCES[0]}""")
+    """${SOURCES[1]} i18n_json I18N_JSON_LEN $TARGETS <${SOURCES[0]}""")
 
 env.Program(
     "lip",
