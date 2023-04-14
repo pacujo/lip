@@ -389,13 +389,13 @@ void load_session(app_t *app)
     app->config.use_tls = IRC_DEFAULT_USE_TLS;
     app->config.cache_directory =
         charstr_printf("%s/%s", app->home_dir, IRC_DEFAULT_CACHE_DIR);
-    if (app->opts.reset_state || !app->opts.state_file)
+    if (app->opts.reset || !app->opts.config_file)
         return;
-    FILE *statef = fopen(app->opts.state_file, "r");
-    if (!statef)
+    FILE *cfgf = fopen(app->opts.config_file, "r");
+    if (!cfgf)
         return;
-    json_thing_t *cfg = json_utf8_decode_file(statef, 1000000);
-    fclose(statef);
+    json_thing_t *cfg = json_utf8_decode_file(cfgf, 1000000);
+    fclose(cfgf);
     if (!cfg)
         return;
     if (json_thing_type(cfg) != JSON_OBJECT) {
@@ -441,18 +441,18 @@ void make_parent_dirs(const char *pathname)
 
 void save_session(app_t *app)
 {
-    if (!app->opts.state_file)
+    if (!app->opts.config_file)
         return;
-    make_parent_dirs(app->opts.state_file);
-    FILE *statef = fopen(app->opts.state_file, "w");
-    if (!statef) {
-        fprintf(stderr, _(PROGRAM ": cannot open %s\n"), app->opts.state_file);
+    make_parent_dirs(app->opts.config_file);
+    FILE *cfgf = fopen(app->opts.config_file, "w");
+    if (!cfgf) {
+        fprintf(stderr, _(PROGRAM ": cannot open %s\n"), app->opts.config_file);
         return;
     }
     json_thing_t *cfg = build_settings(app);
-    json_utf8_dump(cfg, statef);
+    json_utf8_dump(cfg, cfgf);
     json_destroy_thing(cfg);
-    fclose(statef);
+    fclose(cfgf);
 }
 
 void set_autojoin(app_t *app, const char *name, bool enabled)

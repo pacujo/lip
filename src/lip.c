@@ -909,16 +909,16 @@ static gint command_options(GtkApplication *, GVariantDict *options, app_t *app)
 {
     FSTRACE(IRC_COMMAND_OPTIONS);
     const char *arg;
-    if (g_variant_dict_lookup(options, "state", "s", &arg)) {
-        fsfree(app->opts.state_file);
-        app->opts.state_file = charstr_dupstr(arg);
+    if (g_variant_dict_lookup(options, "config", "s", &arg)) {
+        fsfree(app->opts.config_file);
+        app->opts.config_file = charstr_dupstr(arg);
     }
-    if (g_variant_dict_lookup(options, "stateless", "b", NULL)) {
-        fsfree(app->opts.state_file);
-        app->opts.state_file = NULL;
+    if (g_variant_dict_lookup(options, "unconfigured", "b", NULL)) {
+        fsfree(app->opts.config_file);
+        app->opts.config_file = NULL;
     }
-    app->opts.reset_state =
-        g_variant_dict_lookup(options, "reset-state", "b", NULL);
+    app->opts.reset =
+        g_variant_dict_lookup(options, "reset", "b", NULL);
     if (g_variant_dict_lookup(options, "trace-include", "s", &arg)) {
         fsfree(app->opts.trace_include);
         app->opts.trace_include = charstr_dupstr(arg);
@@ -933,19 +933,19 @@ static gint command_options(GtkApplication *, GVariantDict *options, app_t *app)
 static void add_command_options(app_t *app)
 {
     g_application_add_main_option(G_APPLICATION(app->gui.gapp),
-                                  "state", 's',
+                                  "config", 'c',
                                   G_OPTION_FLAG_IN_MAIN, G_OPTION_ARG_STRING,
-                                  _("State file "
+                                  _("Configuration file "
                                     "(absolute or relative to $HOME)"),
                                   _("PATH"));
     g_application_add_main_option(G_APPLICATION(app->gui.gapp),
-                                  "stateless", 0,
+                                  "unconfigured", 0,
                                   G_OPTION_FLAG_IN_MAIN, G_OPTION_ARG_NONE,
-                                  _("No state file"), NULL);
+                                  _("No configuration file"), NULL);
     g_application_add_main_option(G_APPLICATION(app->gui.gapp),
-                                  "reset-state", 0,
+                                  "reset", 0,
                                   G_OPTION_FLAG_IN_MAIN, G_OPTION_ARG_NONE,
-                                  _("Reset state file"), NULL);
+                                  _("Reset configuration"), NULL);
     g_application_add_main_option(G_APPLICATION(app->gui.gapp),
                                   "trace-include", 0,
                                   G_OPTION_FLAG_IN_MAIN, G_OPTION_ARG_STRING,
@@ -977,8 +977,8 @@ int main(int argc, char **argv)
         fprintf(stderr, _(PROGRAM ": no HOME in the environment\n"));
         return EXIT_FAILURE;
     }
-    app.opts.state_file =
-        charstr_printf("%s/.config/lip/state.json", app.home_dir);
+    app.opts.config_file =
+        charstr_printf("%s/.config/lip/config.json", app.home_dir);
     g_signal_connect(app.gui.gapp, "activate", G_CALLBACK(activate), &app);
     g_signal_connect(app.gui.gapp, "shutdown", G_CALLBACK(shut_down), &app);
     add_command_options(&app);
@@ -1005,6 +1005,6 @@ int main(int argc, char **argv)
     destroy_avl_tree(app.config.autojoins);
     fsfree(app.opts.trace_include);
     fsfree(app.opts.trace_exclude);
-    fsfree(app.opts.state_file);
+    fsfree(app.opts.config_file);
     return status;
 }

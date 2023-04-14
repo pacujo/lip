@@ -30,8 +30,8 @@ typedef struct {
 typedef struct {
     struct {
         char *trace_include, *trace_exclude;
-        char *state_file;    /* NULL, absolute or relative to $HOME */
-        bool reset_state;
+        char *config_file;   /* NULL, absolute or relative to $HOME */
+        bool reset;
     } opts;
     struct {
         char *nick, *name, *server;

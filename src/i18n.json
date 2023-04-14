@@ -122,17 +122,17 @@
     "Server Host": {
         "fi_FI.UTF-8": "Palvelimen nimi"
     },
-    "State file (absolute or relative to $HOME)": {
-        "fi_FI.UTF-8": "Tilatiedosto"
+    "Configuration file (absolute or relative to $HOME)": {
+        "fi_FI.UTF-8": "Asetustiedosto (absoluuttinen tai suhteellinen $HOME:en nähden)"
     },
     "PATH": {
         "fi_FI.UTF-8": "POLKUNIMI"
     },
-    "No state file": {
-        "fi_FI.UTF-8": "Ei tilatiedostoa"
+    "No configuration file": {
+        "fi_FI.UTF-8": "Ei asetustiedostoa"
     },
-    "Reset state file": {
-        "fi_FI.UTF-8": "Pyyhi tilatiedosto"
+    "Reset configuration": {
+        "fi_FI.UTF-8": "Pyyhi asetukset"
     },
     "Specify trace events": {
         "fi_FI.UTF-8": "Lokitettavat tapahtumat"
