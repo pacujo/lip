@@ -1,4 +1,4 @@
-env = Environment(PREFIX=ARGUMENTS.get('prefix', '/usr/local'))
+Import("env")
 
-lip = env.Install(".", "../../src/lip")
+lip = env.Install("bin", "../../src/lip")
 env.Alias("install", env.Install("$PREFIX/bin", lip))

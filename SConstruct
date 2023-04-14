@@ -1,2 +1,7 @@
+arch_env = Environment(PREFIX=ARGUMENTS.get('prefix', '/usr/local'))
+
 for dir in [ "src", "components/lip" ]:
-    SConscript(f"{dir}/SConscript", variant_dir=f"stage/native/build/{dir}")
+    env = arch_env.Clone()
+    SConscript(f"{dir}/SConscript",
+               exports=["env"],
+               variant_dir=f"stage/native/build/{dir}")

@@ -624,7 +624,7 @@ static int message_log_cmp(const struct dirent **a, const struct dirent **b)
     return strcmp((*a)->d_name, (*b)->d_name);
 }
 
-static char *read_file(const char *pathname, size_t *count)
+char *read_file(const char *pathname, size_t *count)
 {
     enum { MAX_SIZE = 1000000 };
     FILE *f = fopen(pathname, "r");

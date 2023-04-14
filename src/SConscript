@@ -1,6 +1,6 @@
+Import("env")
 import os
 
-env = Environment()
 env["ENV"]["PKG_CONFIG_PATH"] = os.getenv(
     "PKG_CONFIG_PATH", "/usr/local/lib/pkgconfig")
 
@@ -16,4 +16,4 @@ env.Program(
     "lip",
     ["lip.c", "ind.c", "rpl.c", "util.c", "intl.c", "i18n.c"],
     CCFLAGS="-g -Wall -Werror",
-)
+    CPPDEFINES=["PREFIX=$PREFIX"])
