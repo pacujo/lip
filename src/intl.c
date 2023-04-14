@@ -1,3 +1,4 @@
+#include <string.h>
 #include <stdbool.h>
 #include <encjson.h>
 #include <assert.h>
@@ -20,10 +21,7 @@ static void initialize()
             make_hash_table(1, (void *) hash_unsigned, (void *) unsigned_cmp);
         return;
     }
-    GResource *rsrc = i18n_get_resource();
-    GBytes *data = g_resource_lookup_data(rsrc, "/i18n.json", 0, NULL);
-    json_thing_t *i18n = json_utf8_decode_string(g_bytes_get_data(data, NULL));
-    g_bytes_unref(data);
+    json_thing_t *i18n = json_utf8_decode_string(i18n_json);
     assert(json_thing_type(i18n) == JSON_OBJECT);
     translations = make_hash_table(1000, (void *) hash_string, (void *) strcmp);
     unsigned count = 0;
