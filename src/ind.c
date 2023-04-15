@@ -104,12 +104,11 @@ static void note_join(app_t *app, const prefix_parts_t *parts,
 }
 
 static void distribute(app_t *app, const prefix_parts_t *parts,
-                       list_elem_t *param,
+                       const char *recipients,
                        void (*f)(app_t *app, const prefix_parts_t *parts,
                                  const char *name, void *user_data),
                        void *user_data)
 {
-    const char *recipients = list_elem_get_value(param);
     const char *p = recipients;
     for (;;) {
         const char *q = strchr(p, ',');
@@ -143,7 +142,8 @@ static bool join(app_t *app, const char *prefix, list_t *params)
         clear_prefix(&parts);
         return true;
     }
-    distribute(app, &parts, list_get_first(params), note_join, NULL);
+    const char *recipients = list_elem_get_value(list_get_first(params));
+    distribute(app, &parts, recipients, note_join, NULL);
     clear_prefix(&parts);
     return true;
 }
@@ -151,12 +151,6 @@ static bool join(app_t *app, const char *prefix, list_t *params)
 static bool mode(app_t *app, const char *prefix, list_t *params)
 {
     logged_command(app, prefix, "MODE", params);
-    return true;
-}
-
-static bool notice(app_t *app, const char *prefix, list_t *params)
-{
-    logged_command(app, prefix, "NOTICE", params);
     return true;
 }
 
@@ -195,8 +189,9 @@ static bool ping(app_t *app, const char *prefix, list_t *params)
 }
 
 static void post(app_t *app, const prefix_parts_t *parts, const char *receiver,
-                 const char *text)
+                 void *user_data)
 {
+    const char *text = user_data;
     enum { LIMIT = 50 };
     if (!*receiver) {
         warn(app, _("Ignore empty receiver"));
@@ -215,6 +210,32 @@ static void post(app_t *app, const prefix_parts_t *parts, const char *receiver,
         return;
     }
     append_message(channel, sender, "theirs", "%s", text);
+}
+
+FSTRACE_DECL(IRC_GOT_NOTICE, "");
+FSTRACE_DECL(IRC_GOT_BAD_NOTICE, "");
+FSTRACE_DECL(IRC_GOT_NOTICE_FROM_SERVER, "SERVER=%s");
+
+static bool notice(app_t *app, const char *prefix, list_t *params)
+{
+    prefix_parts_t parts;
+    if (list_size(params) != 2 || !parse_prefix(prefix, &parts)) {
+        FSTRACE(IRC_GOT_BAD_NOTICE);
+        return false;
+    }
+    if (parts.server) {
+        FSTRACE(IRC_GOT_NOTICE_FROM_SERVER, parts.server);
+        clear_prefix(&parts);
+        logged_command(app, prefix, "NOTICE", params);
+        return true;
+    }
+    FSTRACE(IRC_GOT_NOTICE);
+    list_elem_t *e = list_get_first(params);
+    const char *receivers = list_elem_get_value(e);
+    const char *text = list_elem_get_value(list_next(e));
+    distribute(app, &parts, receivers, post, (void *) text);
+    clear_prefix(&parts);
+    return true;
 }
 
 static bool do_ctcp_version(app_t *app, const char *prefix)
@@ -259,7 +280,8 @@ static bool part(app_t *app, const char *prefix, list_t *params)
         return false;
     }
     FSTRACE(IRC_GOT_PART);
-    distribute(app, &parts, list_get_first(params), note_part, NULL);
+    const char *recipients = list_elem_get_value(list_get_first(params));
+    distribute(app, &parts, recipients, note_part, NULL);
     clear_prefix(&parts);
     return true;
 }
@@ -288,17 +310,7 @@ static bool privmsg(app_t *app, const char *prefix, list_t *params)
         clear_prefix(&parts);
         return do_ctcp(app, prefix, text);
     }
-    const char *p = receivers;
-    for (;;) {
-        const char *q = strchr(p, ',');
-        if (!q)
-            break;
-        char *receiver = charstr_dupsubstr(p, q);
-        post(app, &parts, receiver, text);
-        fsfree(receiver);
-        p = q + 1;
-    }
-    post(app, &parts, p, text);
+    distribute(app, &parts, receivers, post, (void *) text);
     clear_prefix(&parts);
     return true;
 }
