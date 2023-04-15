@@ -118,29 +118,162 @@ void console_scroll_maybe(app_t *app, bool scroll)
                           (action_1) { app, (act_1) delayed_console_scroll });
 }
 
-void append_text(GtkTextBuffer *chat_buffer, const gchar *text,
-                 const gchar *tag_name)
+static char *escape_xml(const char *text)
 {
-    if (!tag_name) {
-        gtk_text_buffer_insert_at_cursor(chat_buffer, text, -1);
-        return;
-    }
-    GtkTextIter start, end;
-    gtk_text_buffer_get_end_iter(chat_buffer, &end);
-    GtkTextMark *mark =
-        gtk_text_buffer_create_mark(chat_buffer, "loc", &end, TRUE);
-    gtk_text_buffer_insert_at_cursor(chat_buffer, text, -1);
-    gtk_text_buffer_get_iter_at_mark(chat_buffer, &start, mark);
-    gtk_text_buffer_get_end_iter(chat_buffer, &end);
-    gtk_text_buffer_apply_tag_by_name(chat_buffer, tag_name, &start, &end);
-    gtk_text_buffer_delete_mark(chat_buffer, mark);
+    list_t *snippets = make_list();
+    const char *p = text;
+    const char *q = p;
+    for (;;)
+        switch (*q) {
+            case '\0':
+                list_append(snippets, charstr_dupstr(p));
+                char *escaped = charstr_join("", snippets);
+                list_foreach(snippets, (void *) fsfree, NULL);
+                destroy_list(snippets);
+                return escaped;
+            case '&':
+                list_append(snippets, charstr_dupsubstr(p, q));
+                list_append(snippets, charstr_dupstr("&amp;"));
+                p = ++q;
+                break;
+            case '<':
+                list_append(snippets, charstr_dupsubstr(p, q));
+                list_append(snippets, charstr_dupstr("&lt;"));
+                p = ++q;
+                break;
+            default:
+                q++;
+        }
 }
 
-static void update_cursor(GtkTextBuffer *chat_buffer)
+static void span(char **escaped_text, const char *key, const char *value)
+{
+    char *spanned_text =
+        charstr_printf("<span %s='%s'>%s</span>", key, value, *escaped_text);
+    fsfree(*escaped_text);
+    *escaped_text = spanned_text;
+}
+
+static void tag_text(char **escaped_text, const char *tag_name)
+{
+    if (!tag_name)
+        return;
+    if (!strcmp(tag_name, "mine")) {
+        span(escaped_text, "foreground", "green");
+        return;
+    }
+    if (!strcmp(tag_name, "theirs")) {
+        span(escaped_text, "foreground", "red");
+        return;
+    }
+    if (!strcmp(tag_name, "log")) {
+        span(escaped_text, "foreground", "cyan");
+        return;
+    }
+    if (!strcmp(tag_name, "error")) {
+        span(escaped_text, "foreground", "red");
+        return;
+    }
+    span(escaped_text, "strikethrough", "true");
+}
+
+typedef struct {
+    bool bold, underline, italic;
+    unsigned fg_color, bg_color;
+} irc_text_style_t;
+
+static const char *adjust_style(const char *q, irc_text_style_t *style)
+{
+    switch (*q++) {
+        default:
+            abort();
+        case 'B' & 0x1f:
+            style->bold = !style->bold;
+            return q;
+        case 'O' & 0x1f:
+            style->bold = style->underline = style->italic = false;
+            style->fg_color = style->bg_color = -1U;
+            return q;
+        case 'R' & 0x1f:
+            style->italic = !style->italic;
+            return q;
+        case 'U' & 0x1f:
+            style->underline = !style->underline;
+            return q;
+        case 'C' & 0x1f:
+            ;
+    }
+    if (!(charstr_char_class(*q) & CHARSTR_DIGIT)) {
+        style->fg_color = style->bg_color = -1;
+        return q;
+    }
+    style->fg_color = *q++ - '0';
+    if (charstr_char_class(*q) & CHARSTR_DIGIT)
+        style->fg_color = style->fg_color * 10 + *q++ - '0';
+    if (q[0] != ',' || !(charstr_char_class(q[1]) & CHARSTR_DIGIT))
+        return q;
+    style->bg_color = *++q - '0';
+    if (charstr_char_class(*++q) & CHARSTR_DIGIT)
+        style->bg_color = style->bg_color * 10 + *q++ - '0';
+    return q;
+}
+
+static void append_snippet(GtkTextBuffer *chat_buffer, const char *p,
+                           const char *q, const irc_text_style_t *style,
+                           const char *tag_name, GtkTextIter *end)
+{
+    if (p == q)
+        return;
+    char *snippet = charstr_dupsubstr(p, q);
+    if (style->bold)
+        span(&snippet, "weight", "bold");
+    if (style->italic)
+        span(&snippet, "style", "italic");
+    if (style->underline)
+        span(&snippet, "underline", "single");
+    static const char *const colors[16] = {
+        "white", "black", "blue", "green", "red", "brown", "purple", "orange",
+        "yellow", "lightgreen", "cyan", "lightcyan", "lightblue", "pink",
+        "grey", "lightgrey"
+    };
+    if (style->fg_color < 16)
+        span(&snippet, "foreground", colors[style->fg_color]);
+    if (style->bg_color < 16)
+        span(&snippet, "background", colors[style->bg_color]);
+    tag_text(&snippet, tag_name);
+    gtk_text_buffer_insert_markup(chat_buffer, end, snippet, -1);
+    fsfree(snippet);
+}
+
+void append_text(GtkTextBuffer *chat_buffer, const gchar *text,
+                 const char *tag_name)
 {
     GtkTextIter end;
     gtk_text_buffer_get_end_iter(chat_buffer, &end);
-    gtk_text_buffer_place_cursor(chat_buffer, &end);
+    char *escaped = escape_xml(text);
+    irc_text_style_t style = {
+        .fg_color = -1U,
+        .bg_color = -1U,
+    };
+    const char *p = escaped;
+    const char *q = p;
+    for (;;)
+        switch (*q) {
+            case '\0':
+                append_snippet(chat_buffer, p, q, &style, tag_name, &end);
+                fsfree(escaped);
+                return;
+            case 'B' & 0x1f:
+            case 'C' & 0x1f:
+            case 'O' & 0x1f:
+            case 'R' & 0x1f:
+            case 'U' & 0x1f:
+                append_snippet(chat_buffer, p, q, &style, tag_name, &end);
+                p = q = adjust_style(q, &style);
+                break;
+            default:
+                q++;
+        }
 }
 
 static bool is_date_line(const gchar *line)
@@ -179,7 +312,6 @@ void play_message(channel_t *channel, time_t t, const char *from,
         gtk_text_view_get_buffer(GTK_TEXT_VIEW(channel->chat_view));
     while (gtk_text_buffer_get_line_count(chat_buffer) >= MAX_LINE_COUNT)
         forget_old_message(chat_buffer);
-    update_cursor(chat_buffer);
     append_timestamp(&channel->timestamp, t, chat_buffer);
     if (from) {
         append_text(chat_buffer, from, NULL);
@@ -728,15 +860,6 @@ GtkWidget *build_chat_log(GtkWidget **view)
                                    GTK_POLICY_AUTOMATIC,
                                    GTK_POLICY_AUTOMATIC);
     *view = build_passive_text_view();
-    GtkTextBuffer *chat_buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(*view));
-    gtk_text_buffer_create_tag(chat_buffer,
-                               "mine", "foreground", "green", NULL);
-    gtk_text_buffer_create_tag(chat_buffer,
-                               "theirs", "foreground", "red", NULL);
-    gtk_text_buffer_create_tag(chat_buffer,
-                               "log", "foreground", "cyan", NULL);
-    gtk_text_buffer_create_tag(chat_buffer,
-                               "error", "foreground", "red", NULL);
     gtk_container_add(GTK_CONTAINER(sw), *view);
     return sw;
 }
