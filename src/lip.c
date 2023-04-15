@@ -234,7 +234,7 @@ static void log_in(app_t *app)
     emit(app, " \r\n");
     emit(app, "USER ");
     emit(app, app->config.nick);
-    emit(app, " * * :");
+    emit(app, " 0 * :");
     emit(app, app->config.name);
     emit(app, "\r\n");
 }
