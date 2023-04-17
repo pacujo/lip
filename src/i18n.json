@@ -71,6 +71,111 @@
     "_Original": {
         "fi_FI.UTF-8": "_Normaali"
     },
+    "_Color": {
+        "fi_FI.UTF-8": "_Väri"
+    },
+    "on White(0)": {
+        "fi_FI.UTF-8": "valkealla(0)"
+    },
+    "on Black(1)": {
+        "fi_FI.UTF-8": "mustalla(1)"
+    },
+    "on Blue(2)": {
+        "fi_FI.UTF-8": "sinisellä(2)"
+    },
+    "on Green(3)": {
+        "fi_FI.UTF-8": "vihreällä(3)"
+    },
+    "on Red(4)": {
+        "fi_FI.UTF-8": "punaisella(4)"
+    },
+    "on Brown(5)": {
+        "fi_FI.UTF-8": "ruskealla(5)"
+    },
+    "on Purple(6)": {
+        "fi_FI.UTF-8": "liilalla(6)"
+    },
+    "on Orange(7)": {
+        "fi_FI.UTF-8": "oranssilla(7)"
+    },
+    "on Yellow(8)": {
+        "fi_FI.UTF-8": "keltaisella(8)"
+    },
+    "on Light Green(9)": {
+        "fi_FI.UTF-8": "vaaleanvihreällä(9)"
+    },
+    "on Cyan(10)": {
+        "fi_FI.UTF-8": "turkoosilla(10)"
+    },
+    "on Light Cyan(11)": {
+        "fi_FI.UTF-8": "vaaleanturkoosilla(11)"
+    },
+    "on Light Blue(12)": {
+        "fi_FI.UTF-8": "vaaleansinisellä(12)"
+    },
+    "on Pink(13)": {
+        "fi_FI.UTF-8": "vaaleanpunaisella(13)"
+    },
+    "on Grey(14)": {
+        "fi_FI.UTF-8": "harmaalla(14)"
+    },
+    "on Light Grey(15)": {
+        "fi_FI.UTF-8": "vaaleanharmaalla(15)"
+    },
+    "on Current Background": {
+        "fi_FI.UTF-8": "samalla taustalla"
+    },
+    "White Text(0)": {
+        "fi_FI.UTF-8": "Valkea teksti(0)"
+    },
+    "Black Text(1)": {
+        "fi_FI.UTF-8": "Musta teksti(1)"
+    },
+    "Blue Text(2)": {
+        "fi_FI.UTF-8": "Sininen teksti(2)"
+    },
+    "Green Text(3)": {
+        "fi_FI.UTF-8": "Vihreä teksti(3)"
+    },
+    "Red Text(4)": {
+        "fi_FI.UTF-8": "Punainen teksti(4)"
+    },
+    "Brown Text(5)": {
+        "fi_FI.UTF-8": "Ruskea teksti(5)"
+    },
+    "Purple Text(6)": {
+        "fi_FI.UTF-8": "Liila teksti(6)"
+    },
+    "Orange Text(7)": {
+        "fi_FI.UTF-8": "Oranssi teksti(7)"
+    },
+    "Yellow Text(8)": {
+        "fi_FI.UTF-8": "Keltainen teksti(8)"
+    },
+    "Light Green Text(9)": {
+        "fi_FI.UTF-8": "Vaaleanvihreä teksti(9)"
+    },
+    "Cyan Text(10)": {
+        "fi_FI.UTF-8": "Turkoosi teksti(10)"
+    },
+    "Light Cyan Text(11)": {
+        "fi_FI.UTF-8": "Vaaleanturkoosi teksti(11)"
+    },
+    "Light Blue Text(12)": {
+        "fi_FI.UTF-8": "Vaaleansininen teksti(12)"
+    },
+    "Pink Text(13)": {
+        "fi_FI.UTF-8": "Vaaleanpunainen teksti(13)"
+    },
+    "Grey Text(14)": {
+        "fi_FI.UTF-8": "Harmaa teksti(14)"
+    },
+    "Light Grey Text(15)": {
+        "fi_FI.UTF-8": "Vaaleanharmaa teksti(15)"
+    },
+    "_No Color": {
+        "fi_FI.UTF-8": "_Ei väriä"
+    },
     "_Chat": {
         "fi_FI.UTF-8": "_Keskustelu"
     },

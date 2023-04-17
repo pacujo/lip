@@ -546,7 +546,7 @@ char *xml_tagged(char *element, const char *tag, const char *attributes)
     return tagged;
 }
 
-static char *concatenate(char *s, ...)
+static char *glue(char *s, ...)
 {
     size_t size = 0;
     va_list ap;
@@ -570,11 +570,15 @@ static char *concatenate(char *s, ...)
 
 static char *item(const char *label, const char *action)
 {
-    return xml_tagged(concatenate(xml_tagged(escape_xml(label),
-                                             "attribute", "name='label'"),
-                                  xml_tagged(escape_xml(action),
-                                             "attribute", "name='action'"),
-                                  (char *) NULL),
+    if (!action)
+        return xml_tagged(xml_tagged(escape_xml(label),
+                                     "attribute", "name='label'"),
+                          "item", NULL);
+    return xml_tagged(glue(xml_tagged(escape_xml(label),
+                                      "attribute", "name='label'"),
+                           xml_tagged(escape_xml(action),
+                                      "attribute", "name='action'"),
+                           (char *) NULL),
                       "item", NULL);
 }
 
@@ -585,10 +589,10 @@ static char *section(char *items)
 
 static char *menu(const char *label, char *sections)
 {
-    return xml_tagged(concatenate(xml_tagged(escape_xml(label),
-                                             "attribute", "name='label'"),
-                                  sections,
-                                  (char *) NULL),
+    return xml_tagged(glue(xml_tagged(escape_xml(label),
+                                      "attribute", "name='label'"),
+                           sections,
+                           (char *) NULL),
                       "submenu", NULL);
 }
 
@@ -613,6 +617,77 @@ static GMenuModel *set_menubar(app_t *app, char *menu_xml)
     return model;
 }
 
+static char *build_color_item(const char *label, const char *fg_code,
+                              const char *bg_code)
+{
+    char *action_name = charstr_printf("win.color%s%s", fg_code, bg_code);
+    char *color_item = item(label, action_name);
+    fsfree(action_name);
+    return color_item;
+}
+
+static char *build_background_items(const char *fg_code)
+{
+    char *bg_items =
+        glue(build_color_item(_("on White(0)"), fg_code, "00"),
+             build_color_item(_("on Black(1)"), fg_code, "01"),
+             build_color_item(_("on Blue(2)"), fg_code, "02"),
+             build_color_item(_("on Green(3)"), fg_code, "03"),
+             build_color_item(_("on Red(4)"), fg_code, "04"),
+             build_color_item(_("on Brown(5)"), fg_code, "05"),
+             build_color_item(_("on Purple(6)"), fg_code, "06"),
+             build_color_item(_("on Orange(7)"), fg_code, "07"),
+             build_color_item(_("on Yellow(8)"), fg_code, "08"),
+             build_color_item(_("on Light Green(9)"), fg_code, "09"),
+             build_color_item(_("on Cyan(10)"), fg_code, "10"),
+             build_color_item(_("on Light Cyan(11)"), fg_code, "11"),
+             build_color_item(_("on Light Blue(12)"), fg_code, "12"),
+             build_color_item(_("on Pink(13)"), fg_code, "13"),
+             build_color_item(_("on Grey(14)"), fg_code, "14"),
+             build_color_item(_("on Light Grey(15)"), fg_code, "15"),
+             (char *) NULL);
+    char *action_name = charstr_printf("win.color%s", fg_code);
+    char *items =
+        glue(section(bg_items),
+             section(item(_("on Current Background"), action_name)),
+             (char *) NULL);
+    fsfree(action_name);
+    return items;
+}
+
+static char *build_foreground_menu(const char *label, const char *fg_code)
+{
+    return menu(label, build_background_items(fg_code));
+}
+
+static char *build_color_menu()
+{
+    char *fg_items =
+        glue(build_foreground_menu(_("White Text(0)"), "00"),
+             build_foreground_menu(_("Black Text(1)"), "01"),
+             build_foreground_menu(_("Blue Text(2)"), "02"),
+             build_foreground_menu(_("Green Text(3)"), "03"),
+             build_foreground_menu(_("Red Text(4)"), "04"),
+             build_foreground_menu(_("Brown Text(5)"), "05"),
+             build_foreground_menu(_("Purple Text(6)"), "06"),
+             build_foreground_menu(_("Orange Text(7)"), "07"),
+             build_foreground_menu(_("Yellow Text(8)"), "08"),
+             build_foreground_menu(_("Light Green Text(9)"), "09"),
+             build_foreground_menu(_("Cyan Text(10)"), "10"),
+             build_foreground_menu(_("Light Cyan Text(11)"), "11"),
+             build_foreground_menu(_("Light Blue Text(12)"), "12"),
+             build_foreground_menu(_("Pink Text(13)"), "13"),
+             build_foreground_menu(_("Grey Text(14)"), "14"),
+             build_foreground_menu(_("Light Grey Text(15)"), "15"),
+             (char *) NULL);
+    char *color_menu =
+        menu(_("_Color"),
+             glue(section(fg_items),
+                  section(item(_("_No Color"), "win.color")),
+                  (char *) NULL));
+    return color_menu;
+}
+
 static void build_menus(app_t *app)
 {
     static GActionEntry app_entries[] = {
@@ -627,9 +702,9 @@ static void build_menus(app_t *app)
     char *quit_item = item(_("_Quit"), "app.quit");
     accelerate(app, "app.quit", _("<Ctrl>Q"));
     char *file_menu = menu(_("_File"),
-                           section(concatenate(close_item,
-                                               quit_item,
-                                               (char *) NULL)));
+                           section(glue(close_item,
+                                        quit_item,
+                                        (char *) NULL)));
     char *bold_item = item(_("_Bold"), "win.bold");
     accelerate(app, "win.bold", _("<Ctrl>B"));
     char *italic_item = item(_("_Italic"), "win.italic");
@@ -638,24 +713,28 @@ static void build_menus(app_t *app)
     accelerate(app, "win.underline", _("<Ctrl>U"));
     char *original_item = item(_("_Original"), "win.original");
     accelerate(app, "win.original", _("<Ctrl>O"));
+    char *text_styles = section(glue(bold_item,
+                                     italic_item,
+                                     underline_item,
+                                     original_item,
+                                     (char *) NULL));
+    char *color_menu = build_color_menu();
     char *edit_menu = menu(_("_Edit"),
-                           section(concatenate(bold_item,
-                                               italic_item,
-                                               underline_item,
-                                               original_item,
-                                               (char *) NULL)));
+                           glue(text_styles,
+                                section(color_menu),
+                                NULL));
     char *join_item = item(_("_Join..."), "app.join");
     accelerate(app, "app.join", _("<Ctrl>J"));
     char *autojoin_item = item(_("_Autojoin"), "win.autojoin");
     char *chat_menu = menu(_("_Chat"),
-                           section(concatenate(join_item,
-                                               autojoin_item,
-                                               (char *) NULL)));
+                           section(glue(join_item,
+                                        autojoin_item,
+                                        (char *) NULL)));
     set_menubar(app,
-                interface(menubar(section(concatenate(file_menu,
-                                                      edit_menu,
-                                                      chat_menu,
-                                                      (char *) NULL)))));
+                interface(menubar(section(glue(file_menu,
+                                               edit_menu,
+                                               chat_menu,
+                                               (char *) NULL)))));
 }
 
 static void destroy_main_window(GtkWidget *, app_t *app)

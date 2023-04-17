@@ -694,6 +694,7 @@ static const char *BOLD_MARKUP = "🄱";
 static const char *ITALIC_MARKUP = "🄸";
 static const char *UNDERLINE_MARKUP = "🅄";
 static const char *ORIGINAL_MARKUP = "🄾";
+static const char *COLOR_MARKUP = "🄲";
 
 static char *convert_markup(const gchar *text)
 {
@@ -709,6 +710,8 @@ static char *convert_markup(const gchar *text)
             *q++ = 'U' & 0x1f;
         else if ((next = charstr_skip_prefix(p, ORIGINAL_MARKUP)))
             *q++ = 'O' & 0x1f;
+        else if ((next = charstr_skip_prefix(p, COLOR_MARKUP)))
+            *q++ = 'C' & 0x1f;
         else {
             next = charstr_decode_utf8_codepoint(p, NULL, NULL);
             while (p != next)
@@ -888,6 +891,48 @@ static void original_activated(GSimpleAction *action, GVariant *parameter,
     mark_up_input(user_data, ORIGINAL_MARKUP);
 }
 
+static void color_activated(GSimpleAction *action, GVariant *parameter,
+                            gpointer user_data)
+{
+    GValue value = { 0 };
+    g_object_get_property(G_OBJECT(action), "name", &value);
+    const char *suffix =
+        charstr_skip_prefix(g_value_get_string(&value), "color");
+    if (suffix[0]) {
+        char *markup;
+        if (suffix[2])
+            markup = charstr_printf("%s%c%c,%c%c", COLOR_MARKUP,
+                                    suffix[0], suffix[1], suffix[2], suffix[3]);
+        else markup = charstr_printf("%s%c%c", COLOR_MARKUP,
+                                     suffix[0], suffix[1]);
+        mark_up_input(user_data, markup);
+        fsfree(markup);
+    } else mark_up_input(user_data, COLOR_MARKUP);
+    g_value_unset(&value);
+}
+
+static void add_color_action(channel_t *channel, GActionGroup *actions,
+                             const char *name)
+{
+    GActionEntry entry = { name, color_activated };
+    g_action_map_add_action_entries(G_ACTION_MAP(actions), &entry, 1, channel);
+}
+
+static void add_color_actions(channel_t *channel, GActionGroup *actions)
+{
+    add_color_action(channel, actions, "color");
+    for (int fg = 0; fg < 16; fg++) {
+        char *name = charstr_printf("color%02d", fg);
+        add_color_action(channel, actions, name);
+        fsfree(name);
+        for (int bg = 0; bg < 16; bg++) {
+            char *name = charstr_printf("color%02d%02d", fg, bg);
+            add_color_action(channel, actions, name);
+            fsfree(name);
+        }
+    }
+}
+
 static void add_channel_actions(channel_t *channel, GActionGroup *actions)
 {
     static GActionEntry win_entries[] = {
@@ -899,6 +944,7 @@ static void add_channel_actions(channel_t *channel, GActionGroup *actions)
     };
     g_action_map_add_action_entries(G_ACTION_MAP(actions),
                                     win_entries, -1, channel);
+    add_color_actions(channel, actions);
     GSimpleAction *autojoin =
         g_simple_action_new_stateful("autojoin", NULL,
                                      g_variant_new_boolean(channel->autojoin));
