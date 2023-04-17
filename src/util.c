@@ -301,7 +301,7 @@ static void forget_old_message(GtkTextBuffer *chat_buffer)
         gtk_text_buffer_get_start_iter(chat_buffer, &start);
         gtk_text_buffer_delete(chat_buffer, &start, &line_start);
     }
-    g_clear_object(&line);
+    g_free(&line);
 }
 
 void play_message(channel_t *channel, time_t t, const char *from,
@@ -696,6 +696,35 @@ static void send_message(channel_t *channel, const gchar *text)
     emit(app, "\r\n");
 }
 
+static const char *BOLD_MARKUP = "🄱";
+static const char *ITALIC_MARKUP = "🄸";
+static const char *UNDERLINE_MARKUP = "🅄";
+static const char *ORIGINAL_MARKUP = "🄾";
+
+static char *convert_markup(const gchar *text)
+{
+    char *converted = fsalloc(strlen(text) + 1);
+    char *q = converted;
+    const char *next;
+    for (const char *p = text; *p; p = next) {
+        if ((next = charstr_skip_prefix(p, BOLD_MARKUP)))
+            *q++ = 'B' & 0x1f;
+        else if ((next = charstr_skip_prefix(p, ITALIC_MARKUP)))
+            *q++ = 'R' & 0x1f;
+        else if ((next = charstr_skip_prefix(p, UNDERLINE_MARKUP)))
+            *q++ = 'U' & 0x1f;
+        else if ((next = charstr_skip_prefix(p, ORIGINAL_MARKUP)))
+            *q++ = 'O' & 0x1f;
+        else {
+            next = charstr_decode_utf8_codepoint(p, NULL, NULL);
+            while (p != next)
+                *q++ = *p++;
+        }
+    }
+    *q = '\0';
+    return converted;
+}
+
 static gboolean on_key_press(GtkWidget *view, GdkEventKey *event,
                              channel_t *channel)
 {
@@ -717,23 +746,26 @@ static gboolean on_key_press(GtkWidget *view, GdkEventKey *event,
         }
     }
     gtk_text_buffer_set_text(buffer, "", -1);
-    append_message(channel, channel->app->config.nick, "mine", "%s", msg_text);
-    send_message(channel, msg_text);
-    g_clear_object(&text);
+    char *marked_up = convert_markup(msg_text);
+    append_message(channel, channel->app->config.nick, "mine", "%s", marked_up);
+    send_message(channel, marked_up);
+    fsfree(marked_up);
+    g_free(text);
     return TRUE;
 }
 
 static GtkWidget *build_send_pane(channel_t *channel)
 {
-    GtkWidget *view = gtk_text_view_new();
-    gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(view), GTK_WRAP_WORD);
-    g_signal_connect(G_OBJECT(view), "key_press_event",
+    channel->input_view = gtk_text_view_new();
+    gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(channel->input_view),
+                                GTK_WRAP_WORD);
+    g_signal_connect(G_OBJECT(channel->input_view), "key_press_event",
                      G_CALLBACK(on_key_press), channel);
     GtkWidget *sw = gtk_scrolled_window_new(NULL, NULL);
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(sw),
                                    GTK_POLICY_AUTOMATIC,
                                    GTK_POLICY_AUTOMATIC);
-    gtk_container_add(GTK_CONTAINER(sw), view);
+    gtk_container_add(GTK_CONTAINER(sw), channel->input_view);
     GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
     gtk_box_pack_start(GTK_BOX(hbox), build_prompt(channel), FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(hbox), sw, TRUE, TRUE, 0);
@@ -829,8 +861,50 @@ static void autojoin_changed(GSimpleAction *action, GVariant *value,
     save_session(channel->app);
 }
 
+static void mark_up_input(channel_t *channel, const char *markup)
+{
+    GtkTextBuffer *buffer =
+        gtk_text_view_get_buffer(GTK_TEXT_VIEW(channel->input_view));
+    GtkTextIter end;
+    gtk_text_buffer_get_end_iter(buffer, &end);
+    gtk_text_buffer_insert(buffer, &end, markup, -1);
+}
+
+static void bold_activated(GSimpleAction *action, GVariant *parameter,
+                            gpointer user_data)
+{
+    mark_up_input(user_data, BOLD_MARKUP);
+}
+
+static void italic_activated(GSimpleAction *action, GVariant *parameter,
+                             gpointer user_data)
+{
+    mark_up_input(user_data, ITALIC_MARKUP);
+}
+
+static void underline_activated(GSimpleAction *action, GVariant *parameter,
+                                gpointer user_data)
+{
+    mark_up_input(user_data, UNDERLINE_MARKUP);
+}
+
+static void original_activated(GSimpleAction *action, GVariant *parameter,
+                               gpointer user_data)
+{
+    mark_up_input(user_data, ORIGINAL_MARKUP);
+}
+
 static void add_channel_actions(channel_t *channel, GActionGroup *actions)
 {
+    static GActionEntry win_entries[] = {
+        { "bold", bold_activated },
+        { "italic", italic_activated },
+        { "underline", underline_activated },
+        { "original", original_activated },
+        { NULL }
+    };
+    g_action_map_add_action_entries(G_ACTION_MAP(actions),
+                                    win_entries, -1, channel);
     GSimpleAction *autojoin =
         g_simple_action_new_stateful("autojoin", NULL,
                                      g_variant_new_boolean(channel->autojoin));

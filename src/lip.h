@@ -79,7 +79,7 @@ typedef struct {
     char *key, *name;
     bool autojoin;
     GtkWidget *window;
-    GtkWidget *chat_view;
+    GtkWidget *input_view, *chat_view;
     struct tm timestamp;
 } channel_t;
 

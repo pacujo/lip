@@ -622,16 +622,30 @@ static void build_menus(app_t *app)
     };
     g_action_map_add_action_entries(G_ACTION_MAP(app->gui.gapp),
                                     app_entries, -1, app);
-    accelerate(app, "app.join", _("<Ctrl>J"));
-    accelerate(app, "win.close", _("<Ctrl>W"));
-    accelerate(app, "app.quit", _("<Ctrl>Q"));
     char *close_item = item(_("_Close"), "win.close");
+    accelerate(app, "win.close", _("<Ctrl>W"));
     char *quit_item = item(_("_Quit"), "app.quit");
+    accelerate(app, "app.quit", _("<Ctrl>Q"));
     char *file_menu = menu(_("_File"),
                            section(concatenate(close_item,
                                                quit_item,
                                                (char *) NULL)));
+    char *bold_item = item(_("_Bold"), "win.bold");
+    accelerate(app, "win.bold", _("<Ctrl>B"));
+    char *italic_item = item(_("_Italic"), "win.italic");
+    accelerate(app, "win.italic", _("<Ctrl>I"));
+    char *underline_item = item(_("_Underline"), "win.underline");
+    accelerate(app, "win.underline", _("<Ctrl>U"));
+    char *original_item = item(_("_Original"), "win.original");
+    accelerate(app, "win.original", _("<Ctrl>O"));
+    char *edit_menu = menu(_("_Edit"),
+                           section(concatenate(bold_item,
+                                               italic_item,
+                                               underline_item,
+                                               original_item,
+                                               (char *) NULL)));
     char *join_item = item(_("_Join..."), "app.join");
+    accelerate(app, "app.join", _("<Ctrl>J"));
     char *autojoin_item = item(_("_Autojoin"), "win.autojoin");
     char *chat_menu = menu(_("_Chat"),
                            section(concatenate(join_item,
@@ -639,6 +653,7 @@ static void build_menus(app_t *app)
                                                (char *) NULL)));
     set_menubar(app,
                 interface(menubar(section(concatenate(file_menu,
+                                                      edit_menu,
                                                       chat_menu,
                                                       (char *) NULL)))));
 }
