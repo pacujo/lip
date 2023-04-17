@@ -695,30 +695,63 @@ static const char *ITALIC_MARKUP = "🄸";
 static const char *UNDERLINE_MARKUP = "🅄";
 static const char *ORIGINAL_MARKUP = "🄾";
 static const char *COLOR_MARKUP = "🄲";
+static const char *HIDE_MARKUP = "🗝";
 
-static char *convert_markup(const gchar *text)
+static char *convert_markup(const gchar *text, char **archived)
 {
-    char *converted = fsalloc(strlen(text) + 1);
+    size_t length = strlen(text);
+    char *converted = fsalloc(length + 1);
+    *archived = fsalloc(length + 1);
     char *q = converted;
+    char *r = *archived;
+    bool hide = false;
+    const char *p = text;
     const char *next;
-    for (const char *p = text; *p; p = next) {
-        if ((next = charstr_skip_prefix(p, BOLD_MARKUP)))
-            *q++ = 'B' & 0x1f;
-        else if ((next = charstr_skip_prefix(p, ITALIC_MARKUP)))
-            *q++ = 'R' & 0x1f;
-        else if ((next = charstr_skip_prefix(p, UNDERLINE_MARKUP)))
-            *q++ = 'U' & 0x1f;
-        else if ((next = charstr_skip_prefix(p, ORIGINAL_MARKUP)))
-            *q++ = 'O' & 0x1f;
-        else if ((next = charstr_skip_prefix(p, COLOR_MARKUP)))
-            *q++ = 'C' & 0x1f;
-        else {
-            next = charstr_decode_utf8_codepoint(p, NULL, NULL);
-            while (p != next)
-                *q++ = *p++;
+    while (*p) {
+        for (; *p && !hide; p = next) {
+            if ((next = charstr_skip_prefix(p, BOLD_MARKUP)))
+                *q++ = *r++ = 'B' & 0x1f;
+            else if ((next = charstr_skip_prefix(p, ITALIC_MARKUP)))
+                *q++ = *r++ = 'R' & 0x1f;
+            else if ((next = charstr_skip_prefix(p, UNDERLINE_MARKUP)))
+                *q++ = *r++ = 'U' & 0x1f;
+            else if ((next = charstr_skip_prefix(p, ORIGINAL_MARKUP)))
+                *q++ = *r++ = 'O' & 0x1f;
+            else if ((next = charstr_skip_prefix(p, COLOR_MARKUP)))
+                *q++ = *r++ = 'C' & 0x1f;
+            else if ((next = charstr_skip_prefix(p, HIDE_MARKUP))) {
+                next = charstr_decode_utf8_codepoint(p, NULL, NULL);
+                while (p != next)
+                    *r++ = *p++;
+                hide = true;
+            } else {
+                next = charstr_decode_utf8_codepoint(p, NULL, NULL);
+                while (p != next)
+                    *q++ = *r++ = *p++;
+            }
+        }
+        for (; *p && hide; p = next) {
+            if ((next = charstr_skip_prefix(p, BOLD_MARKUP)))
+                *q++ = 'B' & 0x1f;
+            else if ((next = charstr_skip_prefix(p, ITALIC_MARKUP)))
+                *q++ = 'R' & 0x1f;
+            else if ((next = charstr_skip_prefix(p, UNDERLINE_MARKUP)))
+                *q++ = 'U' & 0x1f;
+            else if ((next = charstr_skip_prefix(p, ORIGINAL_MARKUP)))
+                *q++ = 'O' & 0x1f;
+            else if ((next = charstr_skip_prefix(p, COLOR_MARKUP)))
+                *q++ = 'C' & 0x1f;
+            else if ((next = charstr_skip_prefix(p, HIDE_MARKUP))) {
+                next = charstr_decode_utf8_codepoint(p, NULL, NULL);
+                hide = false;
+            } else {
+                next = charstr_decode_utf8_codepoint(p, NULL, NULL);
+                while (p != next)
+                    *q++ = *p++;
+            }
         }
     }
-    *q = '\0';
+    *q = *r = '\0';
     return converted;
 }
 
@@ -743,8 +776,10 @@ static gboolean on_key_press(GtkWidget *view, GdkEventKey *event,
         }
     }
     gtk_text_buffer_set_text(buffer, "", -1);
-    char *marked_up = convert_markup(msg_text);
-    append_message(channel, channel->app->config.nick, "mine", "%s", marked_up);
+    char *archived;
+    char *marked_up = convert_markup(msg_text, &archived);
+    append_message(channel, channel->app->config.nick, "mine", "%s", archived);
+    fsfree(archived);
     send_message(channel, marked_up);
     fsfree(marked_up);
     g_free(text);
@@ -891,6 +926,12 @@ static void original_activated(GSimpleAction *action, GVariant *parameter,
     mark_up_input(user_data, ORIGINAL_MARKUP);
 }
 
+static void hide_activated(GSimpleAction *action, GVariant *parameter,
+                             gpointer user_data)
+{
+    mark_up_input(user_data, HIDE_MARKUP);
+}
+
 static void color_activated(GSimpleAction *action, GVariant *parameter,
                             gpointer user_data)
 {
@@ -940,6 +981,7 @@ static void add_channel_actions(channel_t *channel, GActionGroup *actions)
         { "italic", italic_activated },
         { "underline", underline_activated },
         { "original", original_activated },
+        { "hide", hide_activated },
         { NULL }
     };
     g_action_map_add_action_entries(G_ACTION_MAP(actions),

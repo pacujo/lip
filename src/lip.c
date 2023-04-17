@@ -697,44 +697,37 @@ static void build_menus(app_t *app)
     };
     g_action_map_add_action_entries(G_ACTION_MAP(app->gui.gapp),
                                     app_entries, -1, app);
-    char *close_item = item(_("_Close"), "win.close");
-    accelerate(app, "win.close", _("<Ctrl>W"));
-    char *quit_item = item(_("_Quit"), "app.quit");
-    accelerate(app, "app.quit", _("<Ctrl>Q"));
-    char *file_menu = menu(_("_File"),
-                           section(glue(close_item,
-                                        quit_item,
-                                        (char *) NULL)));
-    char *bold_item = item(_("_Bold"), "win.bold");
-    accelerate(app, "win.bold", _("<Ctrl>B"));
-    char *italic_item = item(_("_Italic"), "win.italic");
-    accelerate(app, "win.italic", _("<Ctrl>I"));
-    char *underline_item = item(_("_Underline"), "win.underline");
-    accelerate(app, "win.underline", _("<Ctrl>U"));
-    char *original_item = item(_("_Original"), "win.original");
-    accelerate(app, "win.original", _("<Ctrl>O"));
-    char *text_styles = section(glue(bold_item,
-                                     italic_item,
-                                     underline_item,
-                                     original_item,
-                                     (char *) NULL));
-    char *color_menu = build_color_menu();
+    char *file_items = glue(item(_("_Close"), "win.close"),
+                            item(_("_Quit"), "app.quit"),
+                            (char *) NULL);
+    char *file_menu = menu(_("_File"), section(file_items));
+    char *style_items = glue(item(_("_Bold"), "win.bold"),
+                             item(_("_Italic"), "win.italic"),
+                             item(_("_Underline"), "win.underline"),
+                             item(_("_Original"), "win.original"),
+                             (char *) NULL);
+    char *hide_item = item(_("_Hide"), "win.hide");
     char *edit_menu = menu(_("_Edit"),
-                           glue(text_styles,
-                                section(color_menu),
-                                NULL));
-    char *join_item = item(_("_Join..."), "app.join");
-    accelerate(app, "app.join", _("<Ctrl>J"));
-    char *autojoin_item = item(_("_Autojoin"), "win.autojoin");
-    char *chat_menu = menu(_("_Chat"),
-                           section(glue(join_item,
-                                        autojoin_item,
-                                        (char *) NULL)));
+                           glue(section(style_items),
+                                section(build_color_menu()),
+                                section(hide_item),
+                                (char *) NULL));
+    char *chat_items = glue(item(_("_Join..."), "app.join"),
+                            item(_("_Autojoin"), "win.autojoin"),
+                            (char *) NULL);
+    char *chat_menu = menu(_("_Chat"), section(chat_items));
     set_menubar(app,
                 interface(menubar(section(glue(file_menu,
                                                edit_menu,
                                                chat_menu,
                                                (char *) NULL)))));
+    accelerate(app, "win.close", _("<Ctrl>W"));
+    accelerate(app, "app.quit", _("<Ctrl>Q"));
+    accelerate(app, "win.bold", _("<Ctrl>B"));
+    accelerate(app, "win.italic", _("<Ctrl>I"));
+    accelerate(app, "win.underline", _("<Ctrl>U"));
+    accelerate(app, "win.original", _("<Ctrl>O"));
+    accelerate(app, "app.join", _("<Ctrl>J"));
 }
 
 static void destroy_main_window(GtkWidget *, app_t *app)
