@@ -118,7 +118,7 @@ void console_scroll_maybe(app_t *app, bool scroll)
                           (action_1) { app, (act_1) delayed_console_scroll });
 }
 
-static char *escape_xml(const char *text)
+char *escape_xml(const char *text)
 {
     list_t *snippets = make_list();
     const char *p = text;
@@ -301,7 +301,7 @@ static void forget_old_message(GtkTextBuffer *chat_buffer)
         gtk_text_buffer_get_start_iter(chat_buffer, &start);
         gtk_text_buffer_delete(chat_buffer, &start, &line_start);
     }
-    g_free(line);
+    g_clear_object(&line);
 }
 
 void play_message(channel_t *channel, time_t t, const char *from,
@@ -719,7 +719,7 @@ static gboolean on_key_press(GtkWidget *view, GdkEventKey *event,
     gtk_text_buffer_set_text(buffer, "", -1);
     append_message(channel, channel->app->config.nick, "mine", "%s", msg_text);
     send_message(channel, msg_text);
-    g_free(text);
+    g_clear_object(&text);
     return TRUE;
 }
 

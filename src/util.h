@@ -7,6 +7,7 @@ int one_em();
 int one_ex();
 bool begin_console_line(app_t *app, GtkTextBuffer **console);
 void console_scroll_maybe(app_t *app, bool scroll);
+char *escape_xml(const char *text);
 void append_text(GtkTextBuffer *chat_buffer, const gchar *text,
                  const gchar *tag_name);
 void play_message(channel_t *channel, time_t t, const char *from,

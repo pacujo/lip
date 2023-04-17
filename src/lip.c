@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <stdbool.h>
 #include <string.h>
 #include <errno.h>
@@ -326,17 +327,12 @@ static void init_tracing(app_t *app)
 
 static void connect_to_irc_server(app_t *app)
 {
-#if 1
     app->client =
         open_tcp_client(app->async, app->config.server, app->config.port);
     action_1 establish_cb = { app, (act_1) establish };
     tcp_client_register_callback(app->client, establish_cb);
     async_execute(app->async, establish_cb);
     set_state(app, CONNECTING);
-#else
-    (void) establish;
-    app->state = ZOMBIE;
-#endif
 }
 
 static void attach_async_to_gtk(app_t *app)
@@ -539,6 +535,84 @@ static void accelerate(app_t *app, const gchar *action, const gchar *accel)
 #define LABEL "<attribute name='label' translatable='yes'>%s</attribute>"
 #define ACTION(act) "<attribute name='action'>" act "</attribute>"
 
+char *xml_tagged(char *element, const char *tag, const char *attributes)
+{
+    char *tagged;
+    if (attributes)
+        tagged = charstr_printf("<%s %s>%s</%s>",
+                                tag, attributes, element, tag);
+    else tagged = charstr_printf("<%s>%s</%s>", tag, element, tag);
+    fsfree(element);
+    return tagged;
+}
+
+static char *concatenate(char *s, ...)
+{
+    size_t size = 0;
+    va_list ap;
+    va_start(ap, s);
+    for (char *t = s; t; t = va_arg(ap, char *))
+        size += strlen(t);
+    va_end(ap);
+    char *result = fsalloc(size + 1);
+    char *p = result;
+    va_start(ap, s);
+    for (char *t = s; t; t = va_arg(ap, char *)) {
+        char *u = t;
+        while (*u)
+            *p++ = *u++;
+        fsfree(t);
+    }
+    va_end(ap);
+    *p = '\0';
+    return result;
+}
+
+static char *item(const char *label, const char *action)
+{
+    return xml_tagged(concatenate(xml_tagged(escape_xml(label),
+                                             "attribute", "name='label'"),
+                                  xml_tagged(escape_xml(action),
+                                             "attribute", "name='action'"),
+                                  (char *) NULL),
+                      "item", NULL);
+}
+
+static char *section(char *items)
+{
+    return xml_tagged(items, "section", NULL);
+}
+
+static char *menu(const char *label, char *sections)
+{
+    return xml_tagged(concatenate(xml_tagged(escape_xml(label),
+                                             "attribute", "name='label'"),
+                                  sections,
+                                  (char *) NULL),
+                      "submenu", NULL);
+}
+
+static char *menubar(char *sections)
+{
+    return xml_tagged(sections, "menu", "id='menubar'");
+}
+
+static char *interface(char *entries)
+{
+    return xml_tagged(entries, "interface", NULL);
+}
+
+static GMenuModel *set_menubar(app_t *app, char *menu_xml)
+{
+    GtkBuilder *builder = gtk_builder_new_from_string(menu_xml, -1);
+    fsfree(menu_xml);
+    GMenuModel *model =
+        G_MENU_MODEL(gtk_builder_get_object(builder, "menubar"));
+    gtk_application_set_menubar(app->gui.gapp, model);
+    g_clear_object(&builder);
+    return model;
+}
+
 static void build_menus(app_t *app)
 {
     static GActionEntry app_entries[] = {
@@ -546,52 +620,27 @@ static void build_menus(app_t *app)
         { "join", join_activated },
         { NULL }
     };
-    gchar *menu_xml = charstr_printf("<?xml version='1.0'?>"
-                                     "<interface>"
-                                     " <menu id='menubar'>"
-                                     "  <section>"
-                                     "   <submenu>"
-                                     "    " LABEL
-                                     "    <section>"
-                                     "     <item>"
-                                     "      " LABEL ACTION("win.close")
-                                     "     </item>"
-                                     "     <item>"
-                                     "      " LABEL ACTION("app.quit")
-                                     "     </item>"
-                                     "    </section>"
-                                     "   </submenu>"
-                                     "   <submenu>"
-                                     "    " LABEL
-                                     "    <section>"
-                                     "     <item>"
-                                     "      " LABEL ACTION("app.join")
-                                     "     </item>"
-                                     "     <item>"
-                                     "      " LABEL ACTION("win.autojoin")
-                                     "     </item>"
-                                     "    </section>"
-                                     "   </submenu>"
-                                     "  </section>"
-                                     " </menu>"
-                                     "</interface>",
-                                     _("_File"),
-                                     _("_Close"),
-                                     _("_Quit"),
-                                     _("_Chat"),
-                                     _("_Join..."),
-                                     _("Autojoin"));
     g_action_map_add_action_entries(G_ACTION_MAP(app->gui.gapp),
                                     app_entries, -1, app);
     accelerate(app, "app.join", _("<Ctrl>J"));
     accelerate(app, "win.close", _("<Ctrl>W"));
     accelerate(app, "app.quit", _("<Ctrl>Q"));
-    GtkBuilder *builder = gtk_builder_new_from_string(menu_xml, -1);
-    GMenuModel *model =
-        G_MENU_MODEL(gtk_builder_get_object(builder, "menubar"));
-    gtk_application_set_menubar(app->gui.gapp, model);
-    g_clear_object(&builder);
-    fsfree(menu_xml);
+    char *close_item = item(_("_Close"), "win.close");
+    char *quit_item = item(_("_Quit"), "app.quit");
+    char *file_menu = menu(_("_File"),
+                           section(concatenate(close_item,
+                                               quit_item,
+                                               (char *) NULL)));
+    char *join_item = item(_("_Join..."), "app.join");
+    char *autojoin_item = item(_("_Autojoin"), "win.autojoin");
+    char *chat_menu = menu(_("_Chat"),
+                           section(concatenate(join_item,
+                                               autojoin_item,
+                                               (char *) NULL)));
+    set_menubar(app,
+                interface(menubar(section(concatenate(file_menu,
+                                                      chat_menu,
+                                                      (char *) NULL)))));
 }
 
 static void destroy_main_window(GtkWidget *, app_t *app)
@@ -767,7 +816,7 @@ static void configuration_dialog_change_cache(GtkButton *, app_t *app)
     if (response == GTK_RESPONSE_ACCEPT) {
         char *path = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog));
         gtk_entry_set_text(GTK_ENTRY(app->gui.configuration_cache_dir), path);
-        g_free(path);
+        g_clear_object(&path);
     }
     g_object_unref(dialog);
 }
