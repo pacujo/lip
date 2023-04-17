@@ -56,6 +56,21 @@
     "_Quit": {
         "fi_FI.UTF-8": "_Lopeta"
     },
+    "_Edit": {
+        "fi_FI.UTF-8": "_Muokkaa"
+    },
+    "_Bold": {
+        "fi_FI.UTF-8": "_Paksu"
+    },
+    "_Italic": {
+        "fi_FI.UTF-8": "_Kursiivi"
+    },
+    "_Underline": {
+        "fi_FI.UTF-8": "_Alleviivattu"
+    },
+    "_Original": {
+        "fi_FI.UTF-8": "_Normaali"
+    },
     "_Chat": {
         "fi_FI.UTF-8": "_Keskustelu"
     },
