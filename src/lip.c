@@ -417,10 +417,10 @@ channel_t *open_channel(app_t *app, const gchar *name, unsigned limit,
     channel_t *channel = get_channel(app, name);
     if (channel)
         return channel;
-    if (hash_table_size(app->channels) >= limit)
+    if (avl_tree_size(app->channels) >= limit)
         return NULL;
     channel = make_channel(app, name, autojoin);
-    hash_table_put(app->channels, channel->key, channel);
+    avl_tree_put(app->channels, channel->key, channel);
     return channel;
 }
 
@@ -512,7 +512,7 @@ static void join_dialog_select_row(GtkListBox *, GtkListBoxRow *row, app_t *app)
 
 static void channels_gui(app_t *app, GtkWidget *content_area)
 {
-    if (hash_table_empty(app->channels))
+    if (avl_tree_empty(app->channels))
         return;
     GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     add_margin(vbox);
@@ -528,9 +528,9 @@ static void channels_gui(app_t *app, GtkWidget *content_area)
     gtk_container_add(GTK_CONTAINER(sw), listbox);
     gtk_list_box_set_selection_mode(GTK_LIST_BOX(listbox),
                                     GTK_SELECTION_SINGLE);
-    for (hash_elem_t *he = hash_table_get_any(app->channels); he;
-         he = hash_table_get_other(he)) {
-        channel_t *channel = (channel_t *) hash_elem_get_value(he);
+    for (avl_elem_t *ae = avl_tree_get_first(app->channels); ae;
+         ae = avl_tree_next(ae)) {
+        channel_t *channel = (channel_t *) avl_elem_get_value(ae);
         GtkWidget *row = gtk_list_box_row_new();
         gtk_container_add(GTK_CONTAINER(row), gtk_label_new(channel->name));
         gtk_list_box_insert(GTK_LIST_BOX(listbox), row, -1);
@@ -1147,8 +1147,7 @@ int main(int argc, char **argv)
                                         G_APPLICATION_FLAGS_NONE),
         },
         .state = STARTING_UP,
-        .channels = make_hash_table(1000, (void *) hash_string,
-                                    (void *) strcmp),
+        .channels = make_avl_tree((void *) strcmp),
     };
     app.home_dir = getenv("HOME");
     if (!app.home_dir || *app.home_dir != '/') {
@@ -1165,14 +1164,15 @@ int main(int argc, char **argv)
         destroy_async(app.async);
     if (app.cache)
         destroy_rotatable(app.cache);
-    while (!hash_table_empty(app.channels)) {
-        hash_elem_t *he = hash_table_pop_any(app.channels);
-        channel_t *channel = (channel_t *) hash_elem_get_value(he);
-        destroy_hash_element(he);
+    while (!avl_tree_empty(app.channels)) {
+        avl_elem_t *ae = avl_tree_pop_first(app.channels);
+        channel_t *channel = (channel_t *) avl_elem_get_value(ae);
+        destroy_avl_element(ae);
         fsfree(channel->key);
         fsfree(channel->name);
         fsfree(channel);
     }
+    destroy_avl_tree(app.channels);
     /* TODO: disconnect */
     fsfree(app.config.nick);
     fsfree(app.config.name);

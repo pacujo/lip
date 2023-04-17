@@ -9,7 +9,6 @@
 #include <async/tls_connection.h>
 #include <async/queuestream.h>
 #include <fsdyn/avltree.h>
-#include <fsdyn/hashtable.h>
 #include <rotatable/rotatable.h>
 
 #define PROGRAM "lip"
@@ -50,7 +49,7 @@ typedef struct {
     bytestream_1 input;
     char input_buffer[512];
     char *input_cursor, *input_end;
-    hash_table_t *channels;           /* of key -> channel_t */
+    avl_tree_t *channels;       /* of key -> channel_t */
     rotatable_params_t cache_params;
     rotatable_t *cache;
     struct {

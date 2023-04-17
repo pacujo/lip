@@ -1058,11 +1058,11 @@ void furnish_channel(channel_t *channel)
 channel_t *get_channel(app_t *app, const gchar *name)
 {
     char *key = name_to_key(name);
-    hash_elem_t *he = hash_table_get(app->channels, key);
+    avl_elem_t *ae = avl_tree_get(app->channels, key);
     fsfree(key);
-    if (!he)
+    if (!ae)
         return NULL;
-    channel_t *channel = (channel_t *) hash_elem_get_value(he);
+    channel_t *channel = (channel_t *) avl_elem_get_value(ae);
     furnish_channel(channel);
     return channel;
 }
