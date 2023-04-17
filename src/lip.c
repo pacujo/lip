@@ -450,6 +450,7 @@ static void join_response(app_t *app, gint response_id)
             join_ok_response(app);
             break;
         case GTK_RESPONSE_CANCEL:
+        case GTK_RESPONSE_DELETE_EVENT:
             join_cancel_response(app);
             break;
         default:
@@ -500,6 +501,44 @@ static GtkWidget *checkbox(GtkWidget *container, const gchar *prompt,
     return button;
 }
 
+static void join_dialog_select_row(GtkListBox *, GtkListBoxRow *row, app_t *app)
+{
+    GList *children = gtk_container_get_children(GTK_CONTAINER(row));
+    GtkWidget *label = g_list_first(children)->data;
+    g_list_free(children);
+    gtk_entry_set_text(GTK_ENTRY(app->gui.join_channel), 
+                       gtk_label_get_label(GTK_LABEL(label)));
+}
+
+static void channels_gui(app_t *app, GtkWidget *content_area)
+{
+    if (hash_table_empty(app->channels))
+        return;
+    GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    add_margin(vbox);
+    gtk_box_pack_start(GTK_BOX(content_area), vbox, TRUE, TRUE, 0);
+    GtkWidget *heading = gtk_label_new(_("Channels"));
+    gtk_box_pack_start(GTK_BOX(vbox), heading, FALSE, FALSE, 0);
+    GtkWidget *sw = gtk_scrolled_window_new(NULL, NULL);
+    gtk_box_pack_start(GTK_BOX(vbox), sw, TRUE, TRUE, 0);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(sw),
+                                   GTK_POLICY_AUTOMATIC,
+                                   GTK_POLICY_AUTOMATIC);
+    GtkWidget *listbox = gtk_list_box_new();
+    gtk_container_add(GTK_CONTAINER(sw), listbox);
+    gtk_list_box_set_selection_mode(GTK_LIST_BOX(listbox),
+                                    GTK_SELECTION_SINGLE);
+    for (hash_elem_t *he = hash_table_get_any(app->channels); he;
+         he = hash_table_get_other(he)) {
+        channel_t *channel = (channel_t *) hash_elem_get_value(he);
+        GtkWidget *row = gtk_list_box_row_new();
+        gtk_container_add(GTK_CONTAINER(row), gtk_label_new(channel->name));
+        gtk_list_box_insert(GTK_LIST_BOX(listbox), row, -1);
+    }
+    g_signal_connect(listbox, "row-selected",
+                     G_CALLBACK(join_dialog_select_row), app);
+}
+
 static void join_activated(GSimpleAction *action, GVariant *parameter,
                            gpointer user_data)
 {
@@ -520,6 +559,7 @@ static void join_activated(GSimpleAction *action, GVariant *parameter,
     GtkWidget *content_area =
         gtk_dialog_get_content_area(GTK_DIALOG(app->gui.join_dialog));
     app->gui.join_channel = entry_cell(content_area, _("Channel"), "");
+    channels_gui(app, content_area);
     g_signal_connect(app->gui.join_dialog, "key_press_event",
                      G_CALLBACK(join_dialog_key_press), app);
     gtk_widget_show_all(app->gui.join_dialog);
@@ -870,6 +910,7 @@ static void configuration_response(app_t *app, gint response_id)
             configuration_ok_response(app);
             break;
         case GTK_RESPONSE_CANCEL:
+        case GTK_RESPONSE_DELETE_EVENT:
             configuration_cancel_response(app);
             break;
         default:
