@@ -188,6 +188,31 @@ static bool ping(app_t *app, const char *prefix, list_t *params)
     return true;
 }
 
+FSTRACE_DECL(IRC_GOT_NICK, "OLD-NICK=%s NEW-NICK=%s");
+FSTRACE_DECL(IRC_GOT_BAD_NICK, "");
+FSTRACE_DECL(IRC_GOT_OTHER_NICK, "OLD-NICK=%s NEW-NICK=%s");
+
+static bool nick(app_t *app, const char *prefix, list_t *params)
+{
+    prefix_parts_t parts;
+    logged_command(app, prefix, "NICK", params);
+    if (list_size(params) != 1 || !parse_prefix(prefix, &parts)) {
+        FSTRACE(IRC_GOT_BAD_NICK);
+        return false;
+    }
+    const char *new_nick = list_elem_get_value(list_get_first(params));
+    if (!parts.nick || strcmp(parts.nick, app->config.nick)) {
+        FSTRACE(IRC_GOT_OTHER_NICK, parts.nick, new_nick);
+        clear_prefix(&parts);
+        logged_command(app, prefix, "NOTICE", params);
+        return true;
+    }
+    FSTRACE(IRC_GOT_NICK, parts.nick, new_nick);
+    clear_prefix(&parts);
+    reset_nick(app, new_nick);
+    return true;
+}
+
 static void post(app_t *app, const prefix_parts_t *parts, const char *receiver,
                  void *user_data)
 {
@@ -386,6 +411,8 @@ bool do_it(app_t *app, const char *prefix, const char *command, list_t *params)
         done = join(app, prefix, params);
     else if (!strcmp(command, "MODE"))
         done = mode(app, prefix, params);
+    else if (!strcmp(command, "NICK"))
+        done = nick(app, prefix, params);
     else if (!strcmp(command, "NOTICE"))
         done = notice(app, prefix, params);
     else if (!strcmp(command, "PART"))

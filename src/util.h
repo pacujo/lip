@@ -38,3 +38,4 @@ void add_window_actions(GtkWidget *window, channel_t *channel);
 GtkWidget *build_chat_log(GtkWidget **view, GtkTextMark **end_mark);
 void furnish_channel(channel_t *channel);
 channel_t *get_channel(app_t *app, const gchar *name);
+void reset_nick(app_t *app, const char *new_nick);

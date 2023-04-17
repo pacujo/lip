@@ -1066,3 +1066,13 @@ channel_t *get_channel(app_t *app, const gchar *name)
     furnish_channel(channel);
     return channel;
 }
+
+void reset_nick(app_t *app, const char *new_nick)
+{
+    fsfree(app->config.nick);
+    app->config.nick = charstr_dupstr(new_nick);
+    char *title = charstr_printf("%s@%s", APP_NAME, app->config.nick);
+    gtk_window_set_title(GTK_WINDOW(app->gui.app_window), title);
+    fsfree(title);
+    save_session(app);
+}
