@@ -99,12 +99,8 @@ bool begin_console_line(app_t *app, GtkTextBuffer **console)
 
 static void delayed_console_scroll(app_t *app)
 {
-    GtkTextBuffer *buffer =
-        gtk_text_view_get_buffer(GTK_TEXT_VIEW(app->gui.console));
-    GtkTextIter end;
-    gtk_text_buffer_get_end_iter(buffer, &end);
-    gtk_text_view_scroll_to_iter(GTK_TEXT_VIEW(app->gui.console), &end,
-                                 0.0, TRUE, 1.0, 1.0);
+    gtk_text_view_scroll_mark_onscreen(GTK_TEXT_VIEW(app->gui.console),
+                                       app->gui.end_of_console);
 }
 
 void console_scroll_maybe(app_t *app, bool scroll)
@@ -319,10 +315,8 @@ void play_message(channel_t *channel, time_t t, const char *from,
     }
     append_text(chat_buffer, text, tag_name);
     append_text(chat_buffer, "\n", NULL);
-    GtkTextIter end;
-    gtk_text_buffer_get_end_iter(chat_buffer, &end);
-    gtk_text_view_scroll_to_iter(GTK_TEXT_VIEW(channel->chat_view), &end,
-                                 0.05, TRUE, 0.0, 1.0);
+    gtk_text_view_scroll_mark_onscreen(GTK_TEXT_VIEW(channel->chat_view),
+                                       channel->end_of_chat_view);
 }
 
 static void log_message(channel_t *channel, time_t t, const char *from,
@@ -927,7 +921,7 @@ void add_window_actions(GtkWidget *window, channel_t *channel)
     gtk_widget_insert_action_group(window, "win", actions);
 }
 
-GtkWidget *build_chat_log(GtkWidget **view)
+GtkWidget *build_chat_log(GtkWidget **view, GtkTextMark **end_mark)
 {
     GtkWidget *sw = gtk_scrolled_window_new(NULL, NULL);
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(sw),
@@ -935,6 +929,10 @@ GtkWidget *build_chat_log(GtkWidget **view)
                                    GTK_POLICY_AUTOMATIC);
     *view = build_passive_text_view();
     gtk_container_add(GTK_CONTAINER(sw), *view);
+    GtkTextBuffer *buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(*view));
+    GtkTextIter end;
+    gtk_text_buffer_get_end_iter(buffer, &end);
+    *end_mark = gtk_text_buffer_create_mark(buffer, "end", &end, FALSE);
     return sw;
 }
 
@@ -955,7 +953,8 @@ void furnish_channel(channel_t *channel)
                                 app->gui.default_width,
                                 app->gui.default_height);
     GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-    GtkWidget *log = build_chat_log(&channel->chat_view);
+    GtkWidget *log =
+        build_chat_log(&channel->chat_view, &channel->end_of_chat_view);
     gtk_box_pack_start(GTK_BOX(vbox), log, TRUE, TRUE, 0);
     GtkWidget *sep = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
     gtk_box_pack_start(GTK_BOX(vbox), sep, FALSE, FALSE, 0);

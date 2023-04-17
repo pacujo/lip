@@ -676,7 +676,8 @@ static GtkWidget *ensure_main_window(app_t *app)
     gtk_window_set_default_size(GTK_WINDOW(app->gui.app_window),
                                 app->gui.default_width,
                                 app->gui.default_height);
-    app->gui.scrolled_window = build_chat_log(&app->gui.console);
+    app->gui.scrolled_window =
+        build_chat_log(&app->gui.console, &app->gui.end_of_console);
     gtk_container_add(GTK_CONTAINER(app->gui.app_window),
                       app->gui.scrolled_window);
     gtk_widget_show_all(app->gui.app_window);

@@ -68,6 +68,7 @@ typedef struct {
         GtkWidget *app_window;
         GtkWidget *scrolled_window;;
         GtkWidget *console;
+        GtkTextMark *end_of_console;
         struct tm timestamp;
         GtkWidget *join_dialog;
         GtkWidget *join_channel;
@@ -80,6 +81,7 @@ typedef struct {
     bool autojoin;
     GtkWidget *window;
     GtkWidget *input_view, *chat_view;
+    GtkTextMark *end_of_chat_view;
     struct tm timestamp;
 } channel_t;
 
