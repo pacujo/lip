@@ -155,7 +155,7 @@ static void tag_text(char **escaped_text, const char *tag_name)
     if (!tag_name)
         return;
     if (!strcmp(tag_name, "mine")) {
-        span(escaped_text, "foreground", "green");
+        span(escaped_text, "foreground", "blue");
         return;
     }
     if (!strcmp(tag_name, "theirs")) {
