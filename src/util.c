@@ -380,42 +380,33 @@ bool valid_tcp_port(const char *port, int *number)
     return true;
 }
 
-static bool is_special(char c)
-{
-    switch (c) {
-        case '[':
-        case ']':
-        case '\\':
-        case '`':
-        case '_':
-        case '^':
-        case '{':
-        case '|':
-        case '}':
-            return true;
-        default:
-            return false;
-    }
-}
-
 bool valid_nick(const char *nick)
 {
-    if (strlen(nick) > 9)
-        return false;
-    const char *p = nick;
-    if (!(charstr_char_class(*p) & CHARSTR_ALPHA) && !is_special(*p))
-        return false;
-    for (;;)
-        switch (*++p) {
-            case '\0':
-                return true;
-            case '-':
-                break;
+    switch (*nick) {
+        case '\0':
+        case '$':
+        case ':':
+        case '#':
+        case '&':
+            return false;
+        default:
+            ;
+    }
+    for (const char *p = nick; *p; p++)
+        switch (*p) {
+            case ' ':
+            case ',':
+            case '*':
+            case '?':
+            case '!':
+            case '@':
+            case '.':
+                return false;
             default:
-                if (!(charstr_char_class(*p) & CHARSTR_ALNUM) &&
-                    !is_special(*p))
+                if (charstr_char_class(*p) & CHARSTR_CONTROL)
                     return false;
         }
+    return true;
 }
 
 bool valid_name(const char *name)
