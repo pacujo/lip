@@ -41,6 +41,34 @@ static bool rpl_welcome_001(app_t *app, const char *prefix, list_t *params)
     return true;
 }
 
+FSTRACE_DECL(IRC_RPL_AWAY, "");
+FSTRACE_DECL(IRC_RPL_AWAY_BAD_SYNTAX, "");
+FSTRACE_DECL(IRC_RPL_AWAY_BAD_NICK, "NICK=%s");
+FSTRACE_DECL(IRC_RPL_AWAY_UNEXPECTED_NICK, "NICK=%s");
+
+static bool rpl_away_301(app_t *app, const char *prefix, list_t *params)
+{
+    if (list_size(params) != 3) {
+        FSTRACE(IRC_RPL_AWAY_BAD_SYNTAX);
+        return false;
+    }
+    list_elem_t *e = list_next(list_get_first(params));
+    const char *nick = list_elem_get_value(e);
+    if (!valid_nick(nick)) {
+        FSTRACE(IRC_RPL_AWAY_BAD_NICK, nick);
+        return false;
+    }
+    channel_t *channel = get_channel(app, nick);
+    if (!channel) {
+        FSTRACE(IRC_RPL_AWAY_UNEXPECTED_NICK, nick);
+        return false;
+    }
+    FSTRACE(IRC_RPL_AWAY);
+    const char *away_msg = list_elem_get_value(list_next(e));
+    append_message(channel, NULL, "log", _("%s away: %s"), nick, away_msg);
+    return true;
+}
+
 FSTRACE_DECL(IRC_RPL_MOTD, "");
 FSTRACE_DECL(IRC_RPL_MOTD_BAD_SYNTAX, "");
 
@@ -116,6 +144,9 @@ bool numeric(app_t *app, const char *prefix, const char *command,
     switch (atoi(command)) {
         case 1:
             done = rpl_welcome_001(app, prefix, params);
+            break;
+        case 301:
+            done = rpl_away_301(app, prefix, params);
             break;
         case 353:
             done = rpl_namreply_353(app, prefix, params);

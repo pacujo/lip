@@ -269,6 +269,9 @@
     "lip: no HOME in the environment\n": {
         "fi_FI.UTF-8": "lip: HOME-ympäristömuuttuja puuttuu"
     },
+    "%s away: %s": {
+        "fi_FI.UTF-8": "%s poissa: %s"
+    },
     "public": {
         "fi_FI.UTF-8": "julkinen"
     },
