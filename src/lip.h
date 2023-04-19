@@ -78,6 +78,7 @@ typedef struct {
     app_t *app;
     char *key, *name;
     bool autojoin;
+    list_t *nicks_present;      /* of string */
     GtkWidget *window;
     GtkWidget *input_view, *chat_view;
     GtkTextMark *end_of_chat_view;

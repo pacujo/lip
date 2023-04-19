@@ -197,6 +197,21 @@
     "<Ctrl>Q": {
         "fi_FI.UTF-8": "<Ctrl>Q"
     },
+    "<Ctrl>B": {
+        "fi_FI.UTF-8": "<Ctrl>B"
+    },
+    "<Ctrl>I": {
+        "fi_FI.UTF-8": "<Ctrl>I"
+    },
+    "<Ctrl>U": {
+        "fi_FI.UTF-8": "<Ctrl>U"
+    },
+    "<Ctrl>O": {
+        "fi_FI.UTF-8": "<Ctrl>O"
+    },
+    "<Ctrl>H": {
+        "fi_FI.UTF-8": "<Ctrl>H"
+    },
     "Bad nick": {
         "fi_FI.UTF-8": "Kelvoton nikki"
     },

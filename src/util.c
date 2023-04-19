@@ -746,6 +746,73 @@ static char *convert_markup(const gchar *text, char **archived)
     return converted;
 }
 
+static bool nick_break(int codepoint)
+{
+    switch (charstr_unicode_category(codepoint)) {
+        case UNICODE_CATEGORY_Ll:
+        case UNICODE_CATEGORY_Lm:
+        case UNICODE_CATEGORY_Lo:
+        case UNICODE_CATEGORY_Lt:
+        case UNICODE_CATEGORY_Lu:
+        case UNICODE_CATEGORY_Nd:
+        case UNICODE_CATEGORY_Nl:
+        case UNICODE_CATEGORY_No:
+            return false;
+        default:
+            return true;
+    }
+}
+
+static const char *skip_nick(channel_t *channel, const char *s)
+{
+    for (list_elem_t *e = list_get_first(channel->nicks_present); e;
+         e = list_next(e)) {
+        const char *nick = list_elem_get_value(e);
+        const char *skipped = charstr_skip_prefix(s, nick);
+        if (!skipped)
+            continue;
+        int codepoint;
+        if (!charstr_decode_utf8_codepoint(skipped, NULL, &codepoint) ||
+            nick_break(codepoint))
+            return skipped;
+    }
+    return NULL;
+}
+
+static char *highlight_nicks(channel_t *channel, const char *text)
+{
+    list_t *snippets = make_list();
+    const char *p = text;
+    const char *q = p;
+    while (*q) {
+        const char *skipped = skip_nick(channel, q);
+        if (skipped) {
+            list_append(snippets, charstr_dupsubstr(p, q));
+            list_append(snippets, charstr_dupsubstr(q, skipped));
+            p = q = skipped;
+            continue;
+        }
+        for (;; q++) {
+            int codepoint;
+            const char *next =
+                charstr_decode_utf8_codepoint(q, NULL, &codepoint);
+            if (!next) {
+                q++;
+                break;
+            }
+            if (nick_break(codepoint)) {
+                q = next;
+                break;
+            }
+        }
+    }
+    list_append(snippets, charstr_dupsubstr(p, q));
+    char *highlighted = charstr_join(BOLD_MARKUP, snippets);
+    list_foreach(snippets, (void *) fsfree, NULL);
+    destroy_list(snippets);
+    return highlighted;
+}
+
 static gboolean on_key_press(GtkWidget *view, GdkEventKey *event,
                              channel_t *channel)
 {
@@ -767,8 +834,10 @@ static gboolean on_key_press(GtkWidget *view, GdkEventKey *event,
         }
     }
     gtk_text_buffer_set_text(buffer, "", -1);
+    char *highlighted = highlight_nicks(channel, msg_text);
     char *archived;
-    char *marked_up = convert_markup(msg_text, &archived);
+    char *marked_up = convert_markup(highlighted, &archived);
+    fsfree(highlighted);
     append_message(channel, channel->app->config.nick, "mine", "%s", archived);
     fsfree(archived);
     send_message(channel, marked_up);

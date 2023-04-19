@@ -83,6 +83,38 @@ static bool rpl_motd_372(app_t *app, const char *prefix, list_t *params)
     return true;
 }
 
+static bool is_channel_membership_prefix(char c)
+{
+    switch (c) {
+        case '~':               /* founder: +q */
+        case '&':               /* protected: +a */
+        case '@':               /* operator: +o */
+        case '%':               /* halfop: +h */
+        case '+':               /* voice: +v */
+            return true;
+        default:
+            return false;
+    }
+}
+
+static void update_channel_nicks(channel_t *channel, const char *nicks)
+{
+    list_foreach(channel->nicks_present, (void *) fsfree, NULL);
+    destroy_list(channel->nicks_present);
+    channel->nicks_present = make_list();
+    list_t *nick_list = charstr_split(nicks, ' ', -1U);
+    for (list_elem_t *e = list_get_first(nick_list); e; e = list_next(e)) {
+        char *nick = (char *) list_elem_get_value(e);
+        const char *unadorned = nick;
+        if (is_channel_membership_prefix(*unadorned))
+            unadorned++;
+        if (valid_nick(unadorned))
+            list_append(channel->nicks_present, name_to_key(unadorned));
+        fsfree(nick);
+    }
+    destroy_list(nick_list);
+}
+
 FSTRACE_DECL(IRC_RPL_NAMREPLY, "");
 FSTRACE_DECL(IRC_RPL_NAMREPLY_BAD_SYNTAX, "");
 FSTRACE_DECL(IRC_RPL_NAMREPLY_UNEXPECTED_CHANNEL, "NAME=%s");
@@ -123,6 +155,7 @@ static bool rpl_namreply_353(app_t *app, const char *prefix, list_t *params)
     }
     FSTRACE(IRC_RPL_NAMREPLY);
     const char *nicks = list_elem_get_value(list_next(e));
+    update_channel_nicks(channel, nicks);
     append_message(channel, NULL, "log",
                    _("access %s, present: %s"), access, nicks);
     return true;

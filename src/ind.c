@@ -101,6 +101,14 @@ static void note_join(app_t *app, const prefix_parts_t *parts,
                        parts->nick, parts->user, parts->server);
     else append_message(channel, NULL, mood, _("%s (%s@%s) joined"),
                         parts->nick, parts->nick, parts->server);
+    char *key = name_to_key(parts->nick);
+    for (list_elem_t *e = list_get_first(channel->nicks_present); e;
+         e = list_next(e))
+        if (!strcmp(key, list_elem_get_value(e))) {
+            fsfree(key);
+            return;
+        }
+    list_append(channel->nicks_present, key);
 }
 
 static void distribute(app_t *app, const prefix_parts_t *parts,
@@ -292,6 +300,8 @@ static void note_part(app_t *app, const prefix_parts_t *parts,
                        parts->nick, parts->user, parts->server);
     else append_message(channel, NULL, mood, _("%s (%s@%s) parted"),
                         parts->nick, parts->nick, parts->server);
+    /* Don't remove the nick from nicks_present; the nick is likely to
+     * rejoin. */
 }
 
 FSTRACE_DECL(IRC_GOT_PART, "");

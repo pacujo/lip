@@ -405,10 +405,20 @@ static channel_t *make_channel(app_t *app, const gchar *name, bool autojoin)
     channel->name = charstr_dupstr(name);
     channel->autojoin = autojoin;
     channel->window = NULL;
+    channel->nicks_present = make_list();
     time_t t0 = 0;
     localtime_r(&t0, &channel->timestamp);
     furnish_channel(channel);
     return channel;
+}
+
+static void destroy_channel(channel_t *channel)
+{
+    fsfree(channel->key);
+    fsfree(channel->name);
+    list_foreach(channel->nicks_present, (void *) fsfree, NULL);
+    destroy_list(channel->nicks_present);
+    fsfree(channel);
 }
 
 channel_t *open_channel(app_t *app, const gchar *name, unsigned limit,
@@ -767,6 +777,7 @@ static void build_menus(app_t *app)
     accelerate(app, "win.italic", _("<Ctrl>I"));
     accelerate(app, "win.underline", _("<Ctrl>U"));
     accelerate(app, "win.original", _("<Ctrl>O"));
+    accelerate(app, "win.hide", _("<Ctrl>H"));
     accelerate(app, "app.join", _("<Ctrl>J"));
 }
 
@@ -1168,9 +1179,7 @@ int main(int argc, char **argv)
         avl_elem_t *ae = avl_tree_pop_first(app.channels);
         channel_t *channel = (channel_t *) avl_elem_get_value(ae);
         destroy_avl_element(ae);
-        fsfree(channel->key);
-        fsfree(channel->name);
-        fsfree(channel);
+        destroy_channel(channel);
     }
     destroy_avl_tree(app.channels);
     /* TODO: disconnect */
