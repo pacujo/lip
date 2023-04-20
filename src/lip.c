@@ -401,7 +401,7 @@ static channel_t *make_channel(app_t *app, const gchar *name, bool autojoin)
 {
     channel_t *channel = fsalloc(sizeof *channel);
     channel->app = app;
-    channel->key = name_to_key(name);
+    channel->key = lcase_string(name);
     channel->name = charstr_dupstr(name);
     channel->autojoin = autojoin;
     channel->window = NULL;

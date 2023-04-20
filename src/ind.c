@@ -101,7 +101,7 @@ static void note_join(app_t *app, const prefix_parts_t *parts,
                        parts->nick, parts->user, parts->server);
     else append_message(channel, NULL, mood, _("%s (%s@%s) joined"),
                         parts->nick, parts->nick, parts->server);
-    char *key = name_to_key(parts->nick);
+    char *key = lcase_string(parts->nick);
     for (list_elem_t *e = list_get_first(channel->nicks_present); e;
          e = list_next(e))
         if (!strcmp(key, list_elem_get_value(e))) {

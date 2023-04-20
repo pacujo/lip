@@ -3,6 +3,7 @@
 #include <assert.h>
 #include <encjson.h>
 #include <fsdyn/charstr.h>
+#include <fsdyn/integer.h>
 #include "util.h"
 #include "intl.h"
 
@@ -574,7 +575,7 @@ void save_session(app_t *app)
 
 void set_autojoin(app_t *app, const char *name, bool enabled)
 {
-    char *key = name_to_key(name);
+    char *key = lcase_string(name);
     avl_elem_t *ae = avl_tree_get(app->config.autojoins, key);
     if (enabled) {
         if (ae) {
@@ -610,7 +611,7 @@ static char scandinavian_lcase(char c)
     }
 }
 
-char *name_to_key(const char *name)
+char *lcase_string(const char *name)
 {
     char *key = charstr_dupstr(name);
     for (char *s = key; *s; s++)
@@ -671,14 +672,16 @@ void modal_error_dialog(GtkWidget *parent, const gchar *text)
     gtk_widget_destroy(error_dialog);
 }
 
-static void send_message(channel_t *channel, const gchar *text)
+static bool send_message(channel_t *channel, const gchar *text)
 {
-    app_t *app = channel->app;
-    emit(app, "PRIVMSG ");
-    emit(app, channel->name);
-    emit(app, " :");
-    emit(app, text);
-    emit(app, "\r\n");
+    char *message = charstr_printf("PRIVMSG %s :%s\r\n", channel->name, text);
+    if (strlen(message) > 512) {
+        fsfree(message);
+        return false;
+    }
+    emit(channel->app, message);
+    fsfree(message);
+    return true;
 }
 
 static const char *BOLD_MARKUP = "🄱";
@@ -781,32 +784,41 @@ static const char *skip_nick(channel_t *channel, const char *s)
 
 static char *highlight_nicks(channel_t *channel, const char *text)
 {
-    list_t *snippets = make_list();
-    const char *p = text;
-    const char *q = p;
-    while (*q) {
-        const char *skipped = skip_nick(channel, q);
+    list_t *points = make_list();
+    char *lcase = lcase_string(text);
+    const char *s = lcase;
+    while (*s) {
+        const char *skipped = skip_nick(channel, s);
         if (skipped) {
-            list_append(snippets, charstr_dupsubstr(p, q));
-            list_append(snippets, charstr_dupsubstr(q, skipped));
-            p = q = skipped;
+            list_append(points, as_integer(s - lcase));
+            list_append(points, as_integer(skipped - lcase));
+            s = skipped;
             continue;
         }
-        for (;; q++) {
+        for (;; s++) {
             int codepoint;
             const char *next =
-                charstr_decode_utf8_codepoint(q, NULL, &codepoint);
+                charstr_decode_utf8_codepoint(s, NULL, &codepoint);
             if (!next) {
-                q++;
+                s++;
                 break;
             }
             if (nick_break(codepoint)) {
-                q = next;
+                s = next;
                 break;
             }
         }
     }
-    list_append(snippets, charstr_dupsubstr(p, q));
+    fsfree(lcase);
+    list_t *snippets = make_list();
+    const char *p = text;
+    for (list_elem_t *e = list_get_first(points); e; e = list_next(e)) {
+        const char *q = text + as_intptr(list_elem_get_value(e));
+        list_append(snippets, charstr_dupsubstr(p, q));
+        p = q;
+    }
+    destroy_list(points);
+    list_append(snippets, charstr_dupstr(p));
     char *highlighted = charstr_join(BOLD_MARKUP, snippets);
     list_foreach(snippets, (void *) fsfree, NULL);
     destroy_list(snippets);
@@ -821,28 +833,42 @@ static gboolean on_key_press(GtkWidget *view, GdkEventKey *event,
     GtkTextBuffer *buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(view));
     gchar *text = extract_text(buffer);
     const gchar *msg_text = text;
-    /* Since traditional IRC clients use slashes to prefix commands,
-     * we require that an initial slash be doubled. */
-    if (text[0] == '/') {
-        if (text[1] == '/')
-            msg_text++;
-        else {
+    switch (text[0]) {
+        case '\0':
+            /* Just ignore an empty message. */
+            g_free(text);
+            return TRUE;
+        case '/':
+            /* Since traditional IRC clients use slashes to prefix commands,
+             * we require that an initial slash be doubled. */
+            if (text[1] == '/') {
+                msg_text++;
+                break;
+            }
+            g_free(text);
             modal_error_dialog(channel->window,
                                _("If you really want to send an initial '/', "
                                  "double it"));
             return TRUE;
-        }
+        default:
+            ;
+    }
+    char *archived;
+    char *marked_up = convert_markup(msg_text, &archived);
+    g_free(text);
+    bool ok = send_message(channel, marked_up);
+    fsfree(marked_up);
+    if (!ok) {
+        fsfree(archived);
+        modal_error_dialog(channel->window, _("Message too long"));
+        return TRUE;
     }
     gtk_text_buffer_set_text(buffer, "", -1);
-    char *highlighted = highlight_nicks(channel, msg_text);
-    char *archived;
-    char *marked_up = convert_markup(highlighted, &archived);
-    fsfree(highlighted);
-    append_message(channel, channel->app->config.nick, "mine", "%s", archived);
+    char *highlighted = highlight_nicks(channel, archived);
     fsfree(archived);
-    send_message(channel, marked_up);
-    fsfree(marked_up);
-    g_free(text);
+    append_message(channel, channel->app->config.nick, "mine", "%s",
+                   highlighted);
+    fsfree(highlighted);
     return TRUE;
 }
 
@@ -1117,7 +1143,7 @@ void furnish_channel(channel_t *channel)
 
 channel_t *get_channel(app_t *app, const gchar *name)
 {
-    char *key = name_to_key(name);
+    char *key = lcase_string(name);
     avl_elem_t *ae = avl_tree_get(app->channels, key);
     fsfree(key);
     if (!ae)

@@ -29,7 +29,7 @@ void load_session(app_t *app);
 void save_session(app_t *app);
 void make_parent_dirs(const char *pathname);
 void set_autojoin(app_t *app, const char *name, bool enabled);
-char *name_to_key(const char *name);
+char *lcase_string(const char *name);
 GtkWidget *build_passive_text_view();
 bool is_enter_key(GdkEventKey *event);
 void modal_error_dialog(GtkWidget *parent, const gchar *text);

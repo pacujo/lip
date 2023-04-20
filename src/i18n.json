@@ -305,5 +305,8 @@
     "If you really want to send an initial '/', double it": {
         "fi_FI.UTF-8":
         "Jos tosiaan haluat aloittaa viestin '/'-merkillä, tuplaa se"
+    },
+    "Message too long": {
+        "fi_FI.UTF-8": "Viesti on liian pitkä"
     }
 }

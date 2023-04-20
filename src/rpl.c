@@ -109,7 +109,7 @@ static void update_channel_nicks(channel_t *channel, const char *nicks)
         if (is_channel_membership_prefix(*unadorned))
             unadorned++;
         if (valid_nick(unadorned))
-            list_append(channel->nicks_present, name_to_key(unadorned));
+            list_append(channel->nicks_present, lcase_string(unadorned));
         fsfree(nick);
     }
     destroy_list(nick_list);
