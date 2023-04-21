@@ -6,6 +6,7 @@
 #include <fsdyn/integer.h>
 #include "util.h"
 #include "intl.h"
+#include "url.h"
 
 static const char *const IRC_DEFAULT_SERVER = "irc.oftc.net";
 static const int IRC_DEFAULT_PORT = 6697;
@@ -691,61 +692,66 @@ static const char *ORIGINAL_MARKUP = "🄾";
 static const char *COLOR_MARKUP = "🄲";
 static const char *HIDE_MARKUP = "🗝";
 
-static char *convert_markup(const gchar *text, char **archived)
+static char *markup_to_wire(const gchar *text)
 {
     size_t length = strlen(text);
     char *converted = fsalloc(length + 1);
-    *archived = fsalloc(length + 1);
     char *q = converted;
-    char *r = *archived;
-    bool hide = false;
     const char *p = text;
     const char *next;
-    while (*p) {
-        for (; *p && !hide; p = next) {
-            if ((next = charstr_skip_prefix(p, BOLD_MARKUP)))
-                *q++ = *r++ = 'B' & 0x1f;
-            else if ((next = charstr_skip_prefix(p, ITALIC_MARKUP)))
-                *q++ = *r++ = 'R' & 0x1f;
-            else if ((next = charstr_skip_prefix(p, UNDERLINE_MARKUP)))
-                *q++ = *r++ = 'U' & 0x1f;
-            else if ((next = charstr_skip_prefix(p, ORIGINAL_MARKUP)))
-                *q++ = *r++ = 'O' & 0x1f;
-            else if ((next = charstr_skip_prefix(p, COLOR_MARKUP)))
-                *q++ = *r++ = 'C' & 0x1f;
-            else if ((next = charstr_skip_prefix(p, HIDE_MARKUP))) {
-                next = charstr_decode_utf8_codepoint(p, NULL, NULL);
-                while (p != next)
-                    *r++ = *p++;
-                hide = true;
-            } else {
-                next = charstr_decode_utf8_codepoint(p, NULL, NULL);
-                while (p != next)
-                    *q++ = *r++ = *p++;
-            }
-        }
-        for (; *p && hide; p = next) {
-            if ((next = charstr_skip_prefix(p, BOLD_MARKUP)))
-                *q++ = 'B' & 0x1f;
-            else if ((next = charstr_skip_prefix(p, ITALIC_MARKUP)))
-                *q++ = 'R' & 0x1f;
-            else if ((next = charstr_skip_prefix(p, UNDERLINE_MARKUP)))
-                *q++ = 'U' & 0x1f;
-            else if ((next = charstr_skip_prefix(p, ORIGINAL_MARKUP)))
-                *q++ = 'O' & 0x1f;
-            else if ((next = charstr_skip_prefix(p, COLOR_MARKUP)))
-                *q++ = 'C' & 0x1f;
-            else if ((next = charstr_skip_prefix(p, HIDE_MARKUP))) {
-                next = charstr_decode_utf8_codepoint(p, NULL, NULL);
-                hide = false;
-            } else {
-                next = charstr_decode_utf8_codepoint(p, NULL, NULL);
-                while (p != next)
-                    *q++ = *p++;
-            }
+    for (; *p; p = next) {
+        if ((next = charstr_skip_prefix(p, BOLD_MARKUP)))
+            *q++ = 'B' & 0x1f;
+        else if ((next = charstr_skip_prefix(p, ITALIC_MARKUP)))
+            *q++ = 'R' & 0x1f;
+        else if ((next = charstr_skip_prefix(p, UNDERLINE_MARKUP)))
+            *q++ = 'U' & 0x1f;
+        else if ((next = charstr_skip_prefix(p, ORIGINAL_MARKUP)))
+            *q++ = 'O' & 0x1f;
+        else if ((next = charstr_skip_prefix(p, COLOR_MARKUP)))
+            *q++ = 'C' & 0x1f;
+        else if (!(next = charstr_skip_prefix(p, HIDE_MARKUP))) {
+            next = charstr_decode_utf8_codepoint(p, NULL, NULL);
+            while (p != next)
+                *q++ = *p++;
         }
     }
-    *q = *r = '\0';
+    *q = '\0';
+    return converted;
+}
+
+static char *markup_to_archive(const gchar *text)
+{
+    size_t length = strlen(text);
+    char *converted = fsalloc(length + 1);
+    char *q = converted;
+    const char *p = text;
+    const char *next;
+    for (; *p; p = next)
+        if ((next = charstr_skip_prefix(p, BOLD_MARKUP)))
+            *q++ = 'B' & 0x1f;
+        else if ((next = charstr_skip_prefix(p, ITALIC_MARKUP)))
+            *q++ = 'R' & 0x1f;
+        else if ((next = charstr_skip_prefix(p, UNDERLINE_MARKUP)))
+            *q++ = 'U' & 0x1f;
+        else if ((next = charstr_skip_prefix(p, ORIGINAL_MARKUP)))
+            *q++ = 'O' & 0x1f;
+        else if ((next = charstr_skip_prefix(p, COLOR_MARKUP)))
+            *q++ = 'C' & 0x1f;
+        else if ((next = charstr_skip_prefix(p, HIDE_MARKUP))) {
+            while (p != next)
+                *q++ = *p++;
+            for (; *p; p = next) {
+                if ((next = charstr_skip_prefix(p, HIDE_MARKUP)))
+                    break;
+                next = charstr_decode_utf8_codepoint(p, NULL, NULL);
+            }
+        } else {
+            next = charstr_decode_utf8_codepoint(p, NULL, NULL);
+            while (p != next)
+                *q++ = *p++;
+        }
+    *q = '\0';
     return converted;
 }
 
@@ -782,6 +788,22 @@ static const char *skip_nick(channel_t *channel, const char *s)
     return NULL;
 }
 
+static char *wedge(const char *text, list_t *points, const char *joiner)
+{
+    list_t *snippets = make_list();
+    const char *p = text;
+    for (list_elem_t *e = list_get_first(points); e; e = list_next(e)) {
+        const char *q = text + as_intptr(list_elem_get_value(e));
+        list_append(snippets, charstr_dupsubstr(p, q));
+        p = q;
+    }
+    list_append(snippets, charstr_dupstr(p));
+    char *result = charstr_join(joiner, snippets);
+    list_foreach(snippets, (void *) fsfree, NULL);
+    destroy_list(snippets);
+    return result;
+}
+
 static char *highlight_nicks(channel_t *channel, const char *text)
 {
     list_t *points = make_list();
@@ -810,19 +832,35 @@ static char *highlight_nicks(channel_t *channel, const char *text)
         }
     }
     fsfree(lcase);
-    list_t *snippets = make_list();
-    const char *p = text;
-    for (list_elem_t *e = list_get_first(points); e; e = list_next(e)) {
-        const char *q = text + as_intptr(list_elem_get_value(e));
-        list_append(snippets, charstr_dupsubstr(p, q));
-        p = q;
-    }
+    char *highlighted = wedge(text, points, BOLD_MARKUP);
     destroy_list(points);
-    list_append(snippets, charstr_dupstr(p));
-    char *highlighted = charstr_join(BOLD_MARKUP, snippets);
-    list_foreach(snippets, (void *) fsfree, NULL);
-    destroy_list(snippets);
     return highlighted;
+}
+
+static char *highlight_urls(const char *text)
+{
+    list_t *points = make_list();
+    const char *p = text;
+    for (;;) {
+        const char *url_end;
+        const char *url = find_url(p, NULL, &url_end);
+        if (!url)
+            break;
+        list_append(points, as_integer(url - text));
+        list_append(points, as_integer(url_end - text));
+        p = url_end;
+    }
+    char *highlighted = wedge(text, points, UNDERLINE_MARKUP);
+    destroy_list(points);
+    return highlighted;
+}
+
+static char *highlight(channel_t *channel, const char *text)
+{
+    char *h_nicks = highlight_nicks(channel, text);
+    char *h_urls = highlight_urls(h_nicks);
+    fsfree(h_nicks);
+    return h_urls;
 }
 
 static gboolean on_key_press(GtkWidget *view, GdkEventKey *event,
@@ -853,22 +891,21 @@ static gboolean on_key_press(GtkWidget *view, GdkEventKey *event,
         default:
             ;
     }
-    char *archived;
-    char *marked_up = convert_markup(msg_text, &archived);
-    g_free(text);
+    char *marked_up = markup_to_wire(msg_text);
     bool ok = send_message(channel, marked_up);
     fsfree(marked_up);
     if (!ok) {
-        fsfree(archived);
+        g_free(text);
         modal_error_dialog(channel->window, _("Message too long"));
         return TRUE;
     }
-    gtk_text_buffer_set_text(buffer, "", -1);
-    char *highlighted = highlight_nicks(channel, archived);
-    fsfree(archived);
-    append_message(channel, channel->app->config.nick, "mine", "%s",
-                   highlighted);
+    char *highlighted = highlight(channel, msg_text);
+    g_free(text);
+    char *archived = markup_to_archive(highlighted);
     fsfree(highlighted);
+    gtk_text_buffer_set_text(buffer, "", -1);
+    append_message(channel, channel->app->config.nick, "mine", "%s", archived);
+    fsfree(archived);
     return TRUE;
 }
 
