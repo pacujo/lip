@@ -33,6 +33,7 @@ char *lcase_string(const char *name);
 GtkWidget *build_passive_text_view();
 bool is_enter_key(GdkEventKey *event);
 void modal_error_dialog(GtkWidget *parent, const gchar *text);
+char *highlight(channel_t *channel, const char *text);
 char *read_file(const char *pathname, size_t *count);
 void add_window_actions(GtkWidget *window, channel_t *channel);
 GtkWidget *build_chat_log(GtkWidget **view, GtkTextMark **end_mark);

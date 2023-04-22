@@ -692,6 +692,14 @@ static const char *ORIGINAL_MARKUP = "🄾";
 static const char *COLOR_MARKUP = "🄲";
 static const char *HIDE_MARKUP = "🗝";
 
+enum {
+    BOLD_CONTROL = 'B' & 0x1f,
+    ITALIC_CONTROL = 'R' & 0x1f,
+    UNDERLINE_CONTROL = 'U' & 0x1f,
+    ORIGINAL_CONTROL = 'O' & 0x1f,
+    COLOR_CONTROL = 'C' & 0x1f,
+};
+
 static char *markup_to_wire(const gchar *text)
 {
     size_t length = strlen(text);
@@ -701,15 +709,15 @@ static char *markup_to_wire(const gchar *text)
     const char *next;
     for (; *p; p = next) {
         if ((next = charstr_skip_prefix(p, BOLD_MARKUP)))
-            *q++ = 'B' & 0x1f;
+            *q++ = BOLD_CONTROL;
         else if ((next = charstr_skip_prefix(p, ITALIC_MARKUP)))
-            *q++ = 'R' & 0x1f;
+            *q++ = ITALIC_CONTROL;
         else if ((next = charstr_skip_prefix(p, UNDERLINE_MARKUP)))
-            *q++ = 'U' & 0x1f;
+            *q++ = UNDERLINE_CONTROL;
         else if ((next = charstr_skip_prefix(p, ORIGINAL_MARKUP)))
-            *q++ = 'O' & 0x1f;
+            *q++ = ORIGINAL_CONTROL;
         else if ((next = charstr_skip_prefix(p, COLOR_MARKUP)))
-            *q++ = 'C' & 0x1f;
+            *q++ = COLOR_CONTROL;
         else if (!(next = charstr_skip_prefix(p, HIDE_MARKUP))) {
             next = charstr_decode_utf8_codepoint(p, NULL, NULL);
             while (p != next)
@@ -729,15 +737,15 @@ static char *markup_to_archive(const gchar *text)
     const char *next;
     for (; *p; p = next)
         if ((next = charstr_skip_prefix(p, BOLD_MARKUP)))
-            *q++ = 'B' & 0x1f;
+            *q++ = BOLD_CONTROL;
         else if ((next = charstr_skip_prefix(p, ITALIC_MARKUP)))
-            *q++ = 'R' & 0x1f;
+            *q++ = ITALIC_CONTROL;
         else if ((next = charstr_skip_prefix(p, UNDERLINE_MARKUP)))
-            *q++ = 'U' & 0x1f;
+            *q++ = UNDERLINE_CONTROL;
         else if ((next = charstr_skip_prefix(p, ORIGINAL_MARKUP)))
-            *q++ = 'O' & 0x1f;
+            *q++ = ORIGINAL_CONTROL;
         else if ((next = charstr_skip_prefix(p, COLOR_MARKUP)))
-            *q++ = 'C' & 0x1f;
+            *q++ = COLOR_CONTROL;
         else if ((next = charstr_skip_prefix(p, HIDE_MARKUP))) {
             while (p != next)
                 *q++ = *p++;
@@ -832,7 +840,8 @@ static char *highlight_nicks(channel_t *channel, const char *text)
         }
     }
     fsfree(lcase);
-    char *highlighted = wedge(text, points, BOLD_MARKUP);
+    static const char NICK_WEDGE[] = { BOLD_CONTROL, '\0' };
+    char *highlighted = wedge(text, points, NICK_WEDGE);
     destroy_list(points);
     return highlighted;
 }
@@ -850,12 +859,13 @@ static char *highlight_urls(const char *text)
         list_append(points, as_integer(url_end - text));
         p = url_end;
     }
-    char *highlighted = wedge(text, points, UNDERLINE_MARKUP);
+    static const char URL_WEDGE[] = { UNDERLINE_CONTROL, '\0' };
+    char *highlighted = wedge(text, points, URL_WEDGE);
     destroy_list(points);
     return highlighted;
 }
 
-static char *highlight(channel_t *channel, const char *text)
+char *highlight(channel_t *channel, const char *text)
 {
     char *h_nicks = highlight_nicks(channel, text);
     char *h_urls = highlight_urls(h_nicks);
@@ -899,13 +909,14 @@ static gboolean on_key_press(GtkWidget *view, GdkEventKey *event,
         modal_error_dialog(channel->window, _("Message too long"));
         return TRUE;
     }
-    char *highlighted = highlight(channel, msg_text);
+    char *archived = markup_to_archive(msg_text);
     g_free(text);
-    char *archived = markup_to_archive(highlighted);
-    fsfree(highlighted);
-    gtk_text_buffer_set_text(buffer, "", -1);
-    append_message(channel, channel->app->config.nick, "mine", "%s", archived);
+    char *highlighted = highlight(channel, archived);
     fsfree(archived);
+    gtk_text_buffer_set_text(buffer, "", -1);
+    append_message(channel, channel->app->config.nick, "mine", "%s",
+                   highlighted);
+    fsfree(highlighted);
     return TRUE;
 }
 

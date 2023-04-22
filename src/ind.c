@@ -242,7 +242,9 @@ static void post(app_t *app, const prefix_parts_t *parts, const char *receiver,
         warn(app, _("Too many channels"));
         return;
     }
-    append_message(channel, sender, "theirs", "%s", text);
+    char *highlighted = highlight(channel, text);
+    append_message(channel, sender, "theirs", "%s", highlighted);
+    fsfree(highlighted);
 }
 
 FSTRACE_DECL(IRC_GOT_NOTICE, "");
