@@ -13,6 +13,11 @@ env.Command(
     ["i18n.json", "embed.py"],
     """${SOURCES[1]} i18n_json I18N_JSON_LEN $TARGETS <${SOURCES[0]}""")
 
+env.Command(
+    "icon.dat",
+    "#etc/icon.png",
+    """gdk-pixbuf-csource --raw --name=lip_icon $SOURCE >$TARGET""")
+
 env.Program(
     "lip",
     ["lip.c", "ind.c", "rpl.c", "util.c", "intl.c", "i18n.c", "url.c"],

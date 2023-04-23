@@ -54,6 +54,7 @@ typedef struct {
     rotatable_t *cache;
     struct {
         GtkApplication *gapp;
+        GdkPixbuf *icon;
         gint default_width, default_height;
         double pixel_width;
         GtkWidget *configuration_window;

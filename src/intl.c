@@ -44,9 +44,6 @@ static int i18n_filter(const struct dirent *entity)
     return charstr_ends_with(entity->d_name, ".json");
 }
 
-#define _stringify(x) #x
-#define stringify(x) _stringify(x)
-
 static void import_shared_i18n(const char *lang, const char *dirpath)
 {
     struct dirent **namelist;

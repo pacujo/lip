@@ -1166,6 +1166,7 @@ void furnish_channel(channel_t *channel)
     }
     app_t *app = channel->app;
     channel->window = gtk_application_window_new(app->gui.gapp);
+    gtk_window_set_icon(GTK_WINDOW(channel->window), app->gui.icon);
     /* TODO: sanitize name */
     char *window_name = charstr_printf("%s: %s", APP_NAME, channel->name);
     gtk_window_set_title(GTK_WINDOW(channel->window), window_name);

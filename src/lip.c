@@ -794,6 +794,7 @@ static GtkWidget *ensure_main_window(app_t *app)
         return app->gui.app_window;
     }
     app->gui.app_window = gtk_application_window_new(app->gui.gapp);
+    gtk_window_set_icon(GTK_WINDOW(app->gui.app_window), app->gui.icon);
     gtk_window_set_title(GTK_WINDOW(app->gui.app_window), APP_NAME);
     add_window_actions(app->gui.app_window, NULL);
     gtk_window_set_default_size(GTK_WINDOW(app->gui.app_window),
@@ -1023,6 +1024,8 @@ static void configure(app_t *app)
     assert(!app->gui.configuration_window);
     load_session(app);
     app->gui.configuration_window = gtk_application_window_new(app->gui.gapp);
+    gtk_window_set_icon(GTK_WINDOW(app->gui.configuration_window),
+                        app->gui.icon);
     GtkWidget *dialog =
         gtk_dialog_new_with_buttons(_(APP_NAME ": Configuration"),
                                     GTK_WINDOW(app->gui.configuration_window),
@@ -1147,6 +1150,22 @@ static void add_command_options(app_t *app)
                      G_CALLBACK(command_options), app);
 }
 
+#include "icon.dat"
+
+static GdkPixbuf *get_app_icon()
+{
+    char *iconpath =
+        charstr_printf("%s/share/pixmaps/%s.png", stringify(PREFIX), PROGRAM);
+    GdkPixbuf *icon = gdk_pixbuf_new_from_file(iconpath, NULL);
+    fsfree(iconpath);
+    if (icon)
+        return icon;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+    return gdk_pixbuf_new_from_inline(sizeof lip_icon, lip_icon, FALSE, NULL);
+#pragma GCC diagnostic pop
+}
+
 int main(int argc, char **argv)
 {
     app_t app = {
@@ -1156,6 +1175,7 @@ int main(int argc, char **argv)
         .gui = {
             .gapp = gtk_application_new(APPLICATION_ID,
                                         G_APPLICATION_FLAGS_NONE),
+            .icon = get_app_icon(),
         },
         .state = STARTING_UP,
         .channels = make_avl_tree((void *) strcmp),
@@ -1187,6 +1207,7 @@ int main(int argc, char **argv)
     fsfree(app.config.name);
     fsfree(app.config.server);
     fsfree(app.config.cache_directory);
+    g_object_unref(app.gui.icon);
     g_clear_object(&app.gui.gapp);
     clear_autojoins(&app);
     destroy_avl_tree(app.config.autojoins);
