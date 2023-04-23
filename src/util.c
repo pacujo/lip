@@ -1181,13 +1181,14 @@ void furnish_channel(channel_t *channel)
     gtk_box_pack_start(GTK_BOX(vbox), log, TRUE, TRUE, 0);
     GtkWidget *sep = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
     gtk_box_pack_start(GTK_BOX(vbox), sep, FALSE, FALSE, 0);
-    gtk_box_pack_start(GTK_BOX(vbox), build_send_pane(channel),
-                       FALSE, FALSE, 0);
+    GtkWidget *send_pane = build_send_pane(channel);
+    gtk_box_pack_start(GTK_BOX(vbox), send_pane, FALSE, FALSE, 0);
     gtk_container_add(GTK_CONTAINER(channel->window), vbox);
     gtk_widget_show_all(channel->window);
     g_signal_connect(G_OBJECT(channel->window), "destroy",
                      G_CALLBACK(destroy_channel_window), channel);
     replay_channel(channel);
+    gtk_widget_grab_focus(channel->input_view);
 }
 
 channel_t *get_channel(app_t *app, const gchar *name)
