@@ -353,17 +353,63 @@ static void log_message(channel_t *channel, time_t t, const char *from,
     fflush(cachef);
 }
 
-void append_message(channel_t *channel, const gchar *from,
-                    const gchar *tag_name, const gchar *format, ...)
+/* Modifies text. */
+static void issue_notification(channel_t *channel, const char *from,
+                               char *text)
 {
-    va_list ap;
-    va_start(ap, format);
+    char *p = text, *q = text;
+    while (*p)
+        if (charstr_char_class(*p) & CHARSTR_CONTROL)
+            p++;
+        else *q++ = *p++;
+    *q = '\0';
+    size_t length = q - text;
+    if (length > 50)
+        strcpy(text + 45, "[...]");
+    char *title = charstr_printf("%s: %s", _(APP_NAME), channel->name);
+    GNotification *notification = g_notification_new(title);
+    fsfree(title);
+    if (from) {
+        char *body = charstr_printf("%s> %s", from, text);
+        g_notification_set_body(notification, body);
+        fsfree(body);
+    } else g_notification_set_body(notification, text);
+    app_t *app = channel->app;
+    g_notification_set_icon(notification, G_ICON(app->gui.icon));
+    g_application_send_notification(G_APPLICATION(app->gui.gapp), channel->key,
+                                    notification);
+    g_object_unref(notification);
+}
+
+static void append_message_va(channel_t *channel, const gchar *from,
+                              const gchar *tag_name, bool notify,
+                              const gchar *format, va_list ap)
+{
     char *text = charstr_vprintf(format, ap);
-    va_end(ap);
     time_t t = time(NULL);
     play_message(channel, t, from, tag_name, text);
     log_message(channel, t, from, tag_name, text);
+    if (notify)
+        issue_notification(channel, from, text);
     fsfree(text);
+}
+
+static void append_message(channel_t *channel, const gchar *from,
+                           const gchar *tag_name, const gchar *format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    append_message_va(channel, from, tag_name, false, format, ap);
+    va_end(ap);
+}
+
+void indicate_message(channel_t *channel, const gchar *from,
+                      const gchar *tag_name, const gchar *format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    append_message_va(channel, from, tag_name, true, format, ap);
+    va_end(ap);
 }
 
 bool valid_server(const char *address)
@@ -1160,10 +1206,8 @@ GtkWidget *build_chat_log(GtkWidget **view, GtkTextMark **end_mark)
 
 void furnish_channel(channel_t *channel)
 {
-    if (channel->window) {
-        gtk_window_present(GTK_WINDOW(channel->window));
+    if (channel->window)
         return;
-    }
     app_t *app = channel->app;
     channel->window = gtk_application_window_new(app->gui.gapp);
     gtk_window_set_icon(GTK_WINDOW(channel->window), app->gui.icon);

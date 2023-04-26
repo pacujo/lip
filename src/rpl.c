@@ -65,7 +65,7 @@ static bool rpl_away_301(app_t *app, const char *prefix, list_t *params)
     }
     FSTRACE(IRC_RPL_AWAY);
     const char *away_msg = list_elem_get_value(list_next(e));
-    append_message(channel, NULL, "log", _("%s away: %s"), nick, away_msg);
+    indicate_message(channel, NULL, "log", _("%s away: %s"), nick, away_msg);
     return true;
 }
 
@@ -156,8 +156,8 @@ static bool rpl_namreply_353(app_t *app, const char *prefix, list_t *params)
     FSTRACE(IRC_RPL_NAMREPLY);
     const char *nicks = list_elem_get_value(list_next(e));
     update_channel_nicks(channel, nicks);
-    append_message(channel, NULL, "log",
-                   _("access %s, present: %s"), access, nicks);
+    indicate_message(channel, NULL, "log",
+                     _("access %s, present: %s"), access, nicks);
     return true;
 }
 

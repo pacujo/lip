@@ -12,8 +12,8 @@ void append_text(GtkTextBuffer *chat_buffer, const gchar *text,
                  const gchar *tag_name);
 void play_message(channel_t *channel, time_t t, const char *from,
                   const char *tag_name, const char *text);
-void append_message(channel_t *channel, const gchar *from,
-                    const gchar *tag_name, const gchar *format, ...);
+void indicate_message(channel_t *channel, const gchar *from,
+                      const gchar *tag_name, const gchar *format, ...);
 
 bool valid_server(const char *address);
 bool valid_tcp_port(const char *port, int *number);

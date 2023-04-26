@@ -95,12 +95,12 @@ static void note_join(app_t *app, const prefix_parts_t *parts,
     }
     const char *mood = "log";
     if (!parts->server)
-        append_message(channel, NULL, mood, _("%s joined"), parts->nick);
+        indicate_message(channel, NULL, mood, _("%s joined"), parts->nick);
     else if (parts->user)
-        append_message(channel, NULL, mood, _("%s (%s@%s) joined"),
-                       parts->nick, parts->user, parts->server);
-    else append_message(channel, NULL, mood, _("%s (%s@%s) joined"),
-                        parts->nick, parts->nick, parts->server);
+        indicate_message(channel, NULL, mood, _("%s (%s@%s) joined"),
+                         parts->nick, parts->user, parts->server);
+    else indicate_message(channel, NULL, mood, _("%s (%s@%s) joined"),
+                          parts->nick, parts->nick, parts->server);
     char *key = lcase_string(parts->nick);
     for (list_elem_t *e = list_get_first(channel->nicks_present); e;
          e = list_next(e))
@@ -243,7 +243,7 @@ static void post(app_t *app, const prefix_parts_t *parts, const char *receiver,
         return;
     }
     char *highlighted = highlight(channel, text);
-    append_message(channel, sender, "theirs", "%s", highlighted);
+    indicate_message(channel, sender, "theirs", "%s", highlighted);
     fsfree(highlighted);
 }
 
@@ -296,12 +296,12 @@ static void note_part(app_t *app, const prefix_parts_t *parts,
         return;
     const char *mood = "log";
     if (!parts->server)
-        append_message(channel, NULL, mood, _("%s parted"), parts->nick);
+        indicate_message(channel, NULL, mood, _("%s parted"), parts->nick);
     else if (parts->user)
-        append_message(channel, NULL, mood, _("%s (%s@%s) parted"),
-                       parts->nick, parts->user, parts->server);
-    else append_message(channel, NULL, mood, _("%s (%s@%s) parted"),
-                        parts->nick, parts->nick, parts->server);
+        indicate_message(channel, NULL, mood, _("%s (%s@%s) parted"),
+                         parts->nick, parts->user, parts->server);
+    else indicate_message(channel, NULL, mood, _("%s (%s@%s) parted"),
+                          parts->nick, parts->nick, parts->server);
     /* Don't remove the nick from nicks_present; the nick is likely to
      * rejoin. */
 }
