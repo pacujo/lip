@@ -376,6 +376,9 @@ static void issue_notification(channel_t *channel, const char *from,
     } else g_notification_set_body(notification, text);
     app_t *app = channel->app;
     g_notification_set_icon(notification, G_ICON(app->gui.icon));
+    char *detailed_action = charstr_printf("app.notif-acked::%s", channel->key);
+    g_notification_set_default_action(notification, detailed_action);
+    fsfree(detailed_action);
     g_application_send_notification(G_APPLICATION(app->gui.gapp), channel->key,
                                     notification);
     g_object_unref(notification);

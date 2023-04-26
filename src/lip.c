@@ -738,11 +738,26 @@ static char *build_color_menu()
     return color_menu;
 }
 
+static void notification_acked(GSimpleAction *action, GVariant *parameter,
+                               gpointer user_data)
+{
+    app_t *app = user_data;
+    const char *channel_key;
+    g_variant_get(parameter, "&s", &channel_key);
+    g_application_withdraw_notification(G_APPLICATION(app->gui.gapp),
+                                        channel_key);
+    channel_t *channel = get_channel(app, channel_key);
+    if (channel)
+        gtk_window_present(GTK_WINDOW(channel->window));
+}
+
 static void build_menus(app_t *app)
 {
     static GActionEntry app_entries[] = {
         { "quit", quit_activated },
         { "join", join_activated },
+        { "join", join_activated },
+        { "notif-acked", notification_acked, "s" },
         { NULL }
     };
     g_action_map_add_action_entries(G_ACTION_MAP(app->gui.gapp),
