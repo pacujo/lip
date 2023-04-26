@@ -1080,9 +1080,7 @@ static void mark_up_input(channel_t *channel, const char *markup)
 {
     GtkTextBuffer *buffer =
         gtk_text_view_get_buffer(GTK_TEXT_VIEW(channel->input_view));
-    GtkTextIter end;
-    gtk_text_buffer_get_end_iter(buffer, &end);
-    gtk_text_buffer_insert(buffer, &end, markup, -1);
+    gtk_text_buffer_insert_at_cursor(buffer, markup, -1);
 }
 
 static void bold_activated(GSimpleAction *action, GVariant *parameter,
