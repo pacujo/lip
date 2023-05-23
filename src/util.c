@@ -299,7 +299,7 @@ static void forget_old_message(GtkTextBuffer *chat_buffer)
         gtk_text_buffer_get_start_iter(chat_buffer, &start);
         gtk_text_buffer_delete(chat_buffer, &start, &line_start);
     }
-    g_free(&line);
+    g_free(line);
 }
 
 void play_message(channel_t *channel, time_t t, const char *from,
