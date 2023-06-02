@@ -41,32 +41,39 @@ static bool rpl_welcome_001(app_t *app, const char *prefix, list_t *params)
     return true;
 }
 
-FSTRACE_DECL(IRC_RPL_AWAY, "");
-FSTRACE_DECL(IRC_RPL_AWAY_BAD_SYNTAX, "");
-FSTRACE_DECL(IRC_RPL_AWAY_BAD_NICK, "NICK=%s");
-FSTRACE_DECL(IRC_RPL_AWAY_UNEXPECTED_NICK, "NICK=%s");
+FSTRACE_DECL(IRC_SIMPLE_CHAT_ERROR, "TROUBLE=%s");
+FSTRACE_DECL(IRC_SIMPLE_CHAT_ERROR_BAD_SYNTAX, "TROUBLE=%s");
+FSTRACE_DECL(IRC_SIMPLE_CHAT_ERROR_BAD_NICK, "TROUBLE=%s NICK=%s");
+FSTRACE_DECL(IRC_SIMPLE_CHAT_ERROR_UNEXPECTED_NICK, "TROUBLE=%s NICK=%s");
 
-static bool rpl_away_301(app_t *app, const char *prefix, list_t *params)
+static bool simple_chat_error(app_t *app, const char *prefix, list_t *params,
+                              const char *trouble, const char *mood)
 {
     if (list_size(params) != 3) {
-        FSTRACE(IRC_RPL_AWAY_BAD_SYNTAX);
+        FSTRACE(IRC_SIMPLE_CHAT_ERROR_BAD_SYNTAX, trouble);
         return false;
     }
     list_elem_t *e = list_next(list_get_first(params));
     const char *nick = list_elem_get_value(e);
     if (!valid_nick(nick)) {
-        FSTRACE(IRC_RPL_AWAY_BAD_NICK, nick);
+        FSTRACE(IRC_SIMPLE_CHAT_ERROR_BAD_NICK, trouble, nick);
         return false;
     }
     channel_t *channel = get_channel(app, nick);
     if (!channel) {
-        FSTRACE(IRC_RPL_AWAY_UNEXPECTED_NICK, nick);
+        FSTRACE(IRC_SIMPLE_CHAT_ERROR_UNEXPECTED_NICK, trouble, nick);
         return false;
     }
-    FSTRACE(IRC_RPL_AWAY);
-    const char *away_msg = list_elem_get_value(list_next(e));
-    indicate_message(channel, NULL, "log", _("%s away: %s"), nick, away_msg);
+    FSTRACE(IRC_SIMPLE_CHAT_ERROR, trouble);
+    const char *explanation = list_elem_get_value(list_next(e));
+    indicate_message(channel, NULL, mood, _("%s %s: %s"), nick,
+                     trouble, explanation);
     return true;
+}
+
+static bool rpl_away_301(app_t *app, const char *prefix, list_t *params)
+{
+    return simple_chat_error(app, prefix, params, "away", "info");
 }
 
 FSTRACE_DECL(IRC_RPL_MOTD, "");
@@ -81,6 +88,11 @@ static bool rpl_motd_372(app_t *app, const char *prefix, list_t *params)
     FSTRACE(IRC_RPL_MOTD);
     console_info(app, list_next(list_get_first(params)));
     return true;
+}
+
+static bool rpl_no_such_nick_401(app_t *app, const char *prefix, list_t *params)
+{
+    return simple_chat_error(app, prefix, params, "not known", "error");
 }
 
 static bool is_channel_membership_prefix(char c)
@@ -191,6 +203,9 @@ bool numeric(app_t *app, const char *prefix, const char *command,
         case 376:               /* RPL_ENDOFMOTD */
             FSTRACE(IRC_RPL_IGNORED, command);
             done = true;
+            break;
+        case 401:
+            done = rpl_no_such_nick_401(app, prefix, params);
             break;
         default:
             ;
