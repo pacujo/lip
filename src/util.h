@@ -43,3 +43,11 @@ void reset_nick(app_t *app, const char *new_nick);
 
 #define _stringify(x) #x
 #define stringify(x) _stringify(x)
+
+enum {
+    BOLD_CONTROL = 'B' & 0x1f,
+    ITALIC_CONTROL = 'R' & 0x1f,
+    UNDERLINE_CONTROL = 'U' & 0x1f,
+    ORIGINAL_CONTROL = 'O' & 0x1f,
+    COLOR_CONTROL = 'C' & 0x1f,
+};

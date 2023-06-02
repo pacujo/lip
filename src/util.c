@@ -741,14 +741,6 @@ static const char *ORIGINAL_MARKUP = "🄾";
 static const char *COLOR_MARKUP = "🄲";
 static const char *HIDE_MARKUP = "🗝";
 
-enum {
-    BOLD_CONTROL = 'B' & 0x1f,
-    ITALIC_CONTROL = 'R' & 0x1f,
-    UNDERLINE_CONTROL = 'U' & 0x1f,
-    ORIGINAL_CONTROL = 'O' & 0x1f,
-    COLOR_CONTROL = 'C' & 0x1f,
-};
-
 static char *markup_to_wire(const gchar *text)
 {
     size_t length = strlen(text);

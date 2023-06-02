@@ -1,3 +1,4 @@
+#include "util.h"
 #include <fsdyn/charstr.h>
 #include <nwutil.h>
 
@@ -39,6 +40,11 @@ static bool at_final_jam(const char *p, const char *end)
             case '?':
             case '"':
             case '\'':
+            case BOLD_CONTROL:
+            case ITALIC_CONTROL:
+            case UNDERLINE_CONTROL:
+            case ORIGINAL_CONTROL:
+            case COLOR_CONTROL:
                 continue;
             default:
                 if (codepoint >= 128)
@@ -87,6 +93,25 @@ static const char *skip_url(const char *start, const char *end)
     return NULL;
 }
 
+char *deformat(const char *p, const char *end)
+{
+    char *result = fsalloc(end - p + 1);
+    char *q = result;
+    for(; p < end; p++)
+        switch (*p) {
+            case BOLD_CONTROL:
+            case ITALIC_CONTROL:
+            case UNDERLINE_CONTROL:
+            case ORIGINAL_CONTROL:
+            case COLOR_CONTROL:
+                break;
+            default:
+                *q++ = *p;
+        }
+    *q = '\0';
+    return result;
+}
+
 /* Heuristically find the beginning and end of a URL. Return NULL if
  * no URL is detected between p and end. */
 const char *find_url(const char *p, const char *end, const char **url_end)
@@ -96,7 +121,10 @@ const char *find_url(const char *p, const char *end, const char **url_end)
         if (*url_end) {
             /* The end of the URL has been found. Let's see if the URL
              * is compliant: */
-            nwutil_url_t *url = nwutil_parse_url(p, *url_end - p, NULL);
+            char *deformatted = deformat(p, *url_end);
+            nwutil_url_t *url =
+                nwutil_parse_url(deformatted, strlen(deformatted), NULL);
+            fsfree(deformatted);
             if (url) {
                 nwutil_url_destroy(url);
                 return p;
