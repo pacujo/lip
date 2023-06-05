@@ -276,7 +276,7 @@ static bool do_ctcp_version(app_t *app, const char *prefix)
 {
     emit(app, "NOTICE ");
     emit(app, prefix);
-    emit(app, " :\1VERSION :" APP_NAME " 0.0.1\1\n");
+    emit(app, " :\1VERSION " APP_NAME " 0.0.1\1\n");
     return true;
 }
 
